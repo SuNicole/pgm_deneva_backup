@@ -43,6 +43,14 @@
 #include "transport.h"
 #include "routine.h"
 #include <boost/bind.hpp>
+#include "index_hash.h"
+#include "index_btree.h"
+#include "index_rdma.h"
+#include "ycsb.h"
+#include "tpcc.h"
+#include "da.h"
+#include "pps.h"
+#include "wl.h"
 
 void WorkerThread::setup() {
 	if( get_thd_id() == 0) {
@@ -1601,3 +1609,32 @@ RC WorkerNumThread::run() {
   fflush(stdout);
   return FINISH;
 }
+#if CC_ALG == RDMA_OPT_NO_WAIT
+void HotThread::setup() {
+}
+
+RC HotThread::run() {
+  tsetup();
+
+	while(!simulation->is_done()) {
+    progress_stats();
+    // int index_length = 0;
+    // INDEX ** indexs = m_wl->get_all_index(&index_length);
+    // for (int i = 0; i < index_length; i++) {
+    //   INDEX *index = indexs[i];
+    //   uint64_t max_key = index->get_count();
+    //   for (uint64_t j = 0; j < max_key; j++) {
+    //     itemid_t * item;
+	  //     index->get_index_by_id(j, item);
+    //     row_t * row = ((row_t *)item->location);
+    //     if (row->conflict_num > 10) {row->is_hot = true;}
+    //     else if (row->conflict_num < 5) {row->is_hot = false;}
+    //   }
+    // }
+    // mem_allocator.free(indexs,sizeof(INDEX*));
+	}
+  // printf("FINISH %ld:%ld\n",_node_id,_thd_id);
+  fflush(stdout);
+  return FINISH;
+}
+#endif

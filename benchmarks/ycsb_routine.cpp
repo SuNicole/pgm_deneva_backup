@@ -20,6 +20,7 @@
 #include "row_mvcc.h"
 #include "row_rdma_mvcc.h"
 #include "row_rdma_2pl.h"
+#include "row_rdma_opt_2pl.h"
 #include "row_rdma_ts1.h"
 #include "row_rdma_cicada.h"
 #include "rdma_mvcc.h"

@@ -39,6 +39,7 @@ public :
 	RC init_table();
   table_t* get_table(const std::string& tbl_name);
   table_t* get_table(int tbl_idx);
+  INDEX ** get_all_index(int *length);
 	RC init_schema(const char * schema_file);
 	RC get_txn_man(TxnManager *& txn_manager);
 	int key_to_part(uint64_t key);

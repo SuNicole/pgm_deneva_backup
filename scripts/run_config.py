@@ -24,13 +24,13 @@ istc_machines=[
 "istc2",
 "istc5",
 ]
-username = "zhq"
-vcloud_uname = 'home/zhq'
+username = "zhy"
+vcloud_uname = 'home/zhy'
 
 #identity = "/usr0/data1/dvanaken/.ssh/id_rsa_vcloud"
 vcloud_machines = [
-"192.168.10.10",
-"192.168.10.11",
+"192.168.10.12",
+"192.168.10.13",
 "192.168.10.12",
 "192.168.10.13",
 "192.168.10.10",

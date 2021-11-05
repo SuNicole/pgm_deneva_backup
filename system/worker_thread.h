@@ -99,4 +99,13 @@ public:
     void setup();
 
 };
+#if CC_ALG == RDMA_OPT_NO_WAIT
+class HotThread : public Thread {
+public:
+    RC run();
+    void setup();
+
+};
 #endif
+#endif
+

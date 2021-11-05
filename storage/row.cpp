@@ -42,6 +42,7 @@
 #include "row_rdma_silo.h"
 #include "row_rdma_mvcc.h"
 #include "row_rdma_2pl.h"
+#include "row_rdma_opt_2pl.h"
 #include "row_rdma_ts1.h"
 #include "rdma_ts1.h"
 #include "mem_alloc.h"
@@ -90,6 +91,11 @@ RC row_t::init(table_t *host_table, uint64_t part_id, uint64_t row_id) {
 #if CC_ALG == RDMA_WOUND_WAIT2
 	_tid_word = 0;
 	lock_owner = 0;
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT
+	conflict_num = 0;
+	lock_info = 0;
+	is_hot = true;
 #endif
 #if CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
     lock_type = 0;
@@ -179,6 +185,8 @@ void row_t::init_manager(row_t * row) {
   manager = (Row_rdma_silo *) mem_allocator.align_alloc(sizeof(Row_rdma_silo));
 #elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
   manager = (Row_rdma_2pl *) mem_allocator.align_alloc(sizeof(Row_rdma_2pl));
+#elif CC_ALG == RDMA_OPT_NO_WAIT
+  manager = (Row_rdma_opt_2pl *) mem_allocator.align_alloc(sizeof(Row_rdma_opt_2pl));
 #elif CC_ALG == RDMA_MVCC
   manager = (Row_rdma_mvcc *) mem_allocator.align_alloc(sizeof(Row_rdma_mvcc));
 
@@ -522,6 +530,21 @@ RC row_t::get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *ac
 	goto end;
 
 #endif
+#if CC_ALG == RDMA_OPT_NO_WAIT
+	lock_t lock_type = LOCK_NONE;
+	rc = this->manager->lock_get(yield, type, txn, this, cor_id, &lock_type);
+	// if (rc == RCOK) {
+	// 	access->data = txn->cur_row;
+	// }
+	if (rc != Abort) {
+		row_t * newr = (row_t *) mem_allocator.alloc(row_t::get_row_size(tuple_size));
+		newr->init(this->get_table(), this->get_part_id());
+		newr->copy(this);
+		access->data = newr;
+	}
+	access->lock_type = lock_type;
+	goto end;
+#endif
 #if CC_ALG == WAIT_DIE || CC_ALG == NO_WAIT || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
   uint64_t init_time = get_sys_clock();
 	//uint64_t thd_id = txn->get_thd_id();
@@ -837,6 +860,8 @@ uint64_t row_t::return_row(RC rc, access_t type, TxnManager *txn, row_t *row) {
 	if (ROLL_BACK && type == XP) {  // recover from previous writes.
 		this->copy(row);  //for abort of local txn ABORT, copy orig_data to orig_row. remote ABORT dont need this operate
 	}
+	return 0;
+#elif CC_ALG == RDMA_OPT_NO_WAIT
 	return 0;
 #elif CC_ALG == TIMESTAMP || CC_ALG == MVCC || CC_ALG == SSI || CC_ALG == WSI
 	// for RD or SCAN or XP, the row should be deleted.

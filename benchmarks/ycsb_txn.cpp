@@ -36,6 +36,7 @@
 #include "row_mvcc.h"
 #include "row_rdma_mvcc.h"
 #include "row_rdma_2pl.h"
+#include "row_rdma_opt_2pl.h"
 #include "row_rdma_ts1.h"
 #include "row_rdma_cicada.h"
 #include "rdma_mvcc.h"
@@ -382,6 +383,81 @@ RC YCSBTxnManager::send_remote_one_side_request(yield_func_t &yield, ycsb_reques
 	return rc;
 #endif
 
+
+#if CC_ALG == RDMA_OPT_NO_WAIT
+    uint64_t lock_info_pointer = row_t::get_lock_info_pointer(m_item->offset);
+    uint64_t conflict_pointer = m_item->offset;
+    uint64_t new_lock_info = get_txn_id() + 1;
+	rc = RCOK;
+    lock_t lock_type = LOCK_NONE;
+	row_t * test_row = NULL;
+	if(req->acctype == RD || req->acctype == SCAN) {
+		uint64_t try_lock = -1;
+	#if USE_DBPAOR == true
+		test_row = cas_and_read_remote(yield, try_lock,loc,lock_info_pointer,conflict_pointer,0,new_lock_info,cor_id);
+		assert(test_row->get_primary_key() == req->key);
+	#else
+		try_lock = cas_remote_content(yield,loc,lock_info_pointer,0,new_lock_info,cor_id);
+		//read remote data
+		test_row = read_remote_row(yield,loc,conflict_pointer,cor_id);
+		assert(test_row->get_primary_key() == req->key);
+	#endif
+		if (try_lock != 0 || test_row->lock_info != new_lock_info) {
+		    faa_remote_content(yield,loc,conflict_pointer,cor_id);
+			// printf("407 lock failed try_lock = %ld now it is %ld\n", try_lock, test_row->lock_info);
+            return Abort;
+		}
+		int write_size = row_t::get_row_write_size(test_row->tuple_size);
+		char * write_pointer = row_t::get_write_pointer((char*)test_row);
+		if (test_row->is_hot) {
+            test_row->read_cnt ++;
+            test_row->lock_info = 0;
+            lock_type = DLOCK_SH;
+            faa_remote_content(yield,loc,conflict_pointer,cor_id);
+			assert(write_remote_row(yield,loc,write_size,lock_info_pointer,write_pointer, cor_id) == true);
+        } else if(test_row->read_cnt > 0) {
+			test_row->lock_info = 0;
+            faa_remote_content(yield,loc,conflict_pointer,cor_id);
+			assert(write_remote_row(yield,loc,write_size,lock_info_pointer,write_pointer, cor_id) == true);
+			return Abort;
+        } else {
+			lock_type = DLOCK_EX;
+		}
+		access_t type = req->acctype;
+        rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
+		return rc;
+	}else if (req->acctype == WR){
+		uint64_t try_lock = -1;
+	#if USE_DBPAOR == true
+		test_row = cas_and_read_remote(yield, try_lock,loc,lock_info_pointer,conflict_pointer,0,new_lock_info,cor_id);
+		assert(test_row->get_primary_key() == req->key);
+	#else
+		try_lock = cas_remote_content(yield,loc,lock_info_pointer,0,new_lock_info,cor_id);
+		//read remote data
+		test_row = read_remote_row(yield,loc,conflict_pointer,cor_id);
+		assert(test_row->get_primary_key() == req->key);
+	#endif
+		if (try_lock != 0 || test_row->lock_info != new_lock_info) {
+		    // faa_remote_content(yield,loc,conflict_pointer,cor_id);
+			// printf("txn %ld lock failed try_lock = %ld now it is %ld\n", new_lock_info, try_lock, test_row->lock_info);
+            return Abort;
+		}
+		int write_size = row_t::get_row_write_size(test_row->tuple_size);
+		char * write_pointer = row_t::get_write_pointer((char*)test_row);
+		if(test_row->read_cnt > 0) {
+			test_row->lock_info = 0;
+            // faa_remote_content(yield,loc,conflict_pointer,cor_id);
+			assert(write_remote_row(yield,loc,sizeof(uint64_t), lock_info_pointer,write_pointer, cor_id) == true);
+			return Abort;
+        } else {
+			lock_type = DLOCK_EX;
+		}
+		access_t type = req->acctype;
+        rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
+		return rc;
+	}
+#endif
+
 #if CC_ALG == RDMA_NO_WAIT
 if(req->acctype == RD || req->acctype == WR){
 		uint64_t tts = get_timestamp();
@@ -479,30 +555,30 @@ remote_atomic_retry_lock:
 #endif
 
 #if CC_ALG == RDMA_NO_WAIT2
-if(req->acctype == RD || req->acctype == WR){
+	if(req->acctype == RD || req->acctype == WR){
 		uint64_t tts = get_timestamp();
-#if USE_DBPAOR == true
-		//cas result
-		uint64_t try_lock;
-		//read result
-		row_t * test_row = cas_and_read_remote(yield,try_lock,loc,m_item->offset,m_item->offset,0,1,cor_id);
-		
-		if(try_lock != 0){ //if CAS failed, ignore read content
-			DEBUG_M("TxnManager::get_row(abort) access free\n");
-			row_local = NULL;
-			txn->rc = Abort;
-			mem_allocator.free(m_item, sizeof(itemid_t));
-			mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-			return Abort;
-		}
-		//CAS success, now get read content
-		assert(test_row->_tid_word == 1);		
-#if DEBUG_PRINTF
-		printf("---thread id：%lu, remote lock success，lock location: %lu; %p, txn id: %lu,original lock_info: 0, new_lock_info: 1\n", get_thd_id(), loc, remote_mr_attr[loc].buf + m_item->offset, get_txn_id());
-#endif
-#endif
+	#if USE_DBPAOR == true
+			//cas result
+			uint64_t try_lock;
+			//read result
+			row_t * test_row = cas_and_read_remote(yield,try_lock,loc,m_item->offset,m_item->offset,0,1,cor_id);
+			
+			if(try_lock != 0){ //if CAS failed, ignore read content
+				DEBUG_M("TxnManager::get_row(abort) access free\n");
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort;
+			}
+			//CAS success, now get read content
+			assert(test_row->_tid_word == 1);		
+		#if DEBUG_PRINTF
+				printf("---thread id：%lu, remote lock success，lock location: %lu; %p, txn id: %lu,original lock_info: 0, new_lock_info: 1\n", get_thd_id(), loc, remote_mr_attr[loc].buf + m_item->offset, get_txn_id());
+		#endif
+	#endif
 
-#if USE_DBPAOR == false
+	#if USE_DBPAOR == false
         uint64_t try_lock = -1;
         try_lock = cas_remote_content(yield,loc,m_item->offset,0,1,cor_id);
 
@@ -516,7 +592,7 @@ if(req->acctype == RD || req->acctype == WR){
 		}
         row_t * test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
         assert(test_row->get_primary_key() == req->key);
-#endif
+	#endif
         access_t type = req->acctype;
         rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc);
         return rc;   		

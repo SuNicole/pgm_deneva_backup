@@ -67,6 +67,7 @@ class Row_rdma_silo;
 class Row_rdma_mvcc;
 class rdma_mvcc;
 class Row_rdma_2pl;
+class Row_rdma_opt_2pl;
 class Row_rdma_maat;
 class Row_rdma_ts1;
 class Row_rdma_cicada;
@@ -143,6 +144,19 @@ public:
 #endif
 	void return_row(RC rc, access_t type, TxnManager * txn, row_t * row, uint64_t _min_commit_ts);
 
+	
+#if CC_ALG == RDMA_OPT_NO_WAIT
+	static int get_row_write_size(int tuple_size) {
+		return get_row_size(tuple_size) - sizeof(conflict_num) - sizeof(is_hot);
+	}
+	static char* get_write_pointer(char* p) {return p + sizeof(conflict_num) + sizeof(is_hot);}
+	static uint64_t get_lock_info_pointer(row_t *p) {
+		return  (char*)p - rdma_global_buffer + sizeof(conflict_num) + sizeof(is_hot);
+	}
+	static uint64_t get_lock_info_pointer(uint64_t offset) {
+		return offset + sizeof(conflict_num) + sizeof(is_hot);
+	}
+#endif	
     #if CC_ALG == RDMA_SILO
         volatile uint64_t	_tid_word;  //lcok info ：txn_id
         ts_t 			timestamp;
@@ -161,6 +175,12 @@ public:
 		volatile uint64_t ts[LOCK_LENGTH];
 		volatile uint64_t lock_owner[LOCK_LENGTH];
 		Row_rdma_2pl * manager;
+	#elif CC_ALG == RDMA_OPT_NO_WAIT
+		volatile uint64_t conflict_num;
+		volatile uint64_t is_hot;
+		volatile uint64_t lock_info;
+		volatile uint64_t read_cnt;
+		Row_rdma_opt_2pl * manager;
 	#elif CC_ALG == RDMA_MAAT
 	    volatile uint64_t _tid_word;
 		Row_rdma_maat * manager;

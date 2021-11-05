@@ -32,7 +32,6 @@ RC IndexRdma::init(uint64_t bucket_cnt) {
     // uint64_t cl_index_size = (cust_idx_num/g_node_cnt)*(sizeof(IndexInfo)+1);
 
     uint64_t index_size;
-
    // if(this == i_item){
     if(bucket_cnt == 0){
         index_info = (IndexInfo*)rdma_global_buffer;
@@ -68,7 +67,7 @@ RC IndexRdma::init(uint64_t bucket_cnt) {
     // }
 
 	printf("%d",index_info[0].key);
-
+	_index_size = index_size;
 	uint64_t i = 0;
 	for (i = 0; i < index_size; i ++) {
 		index_info[i].init();
@@ -79,7 +78,7 @@ RC IndexRdma::init(uint64_t bucket_cnt) {
 }
 #else
 RC IndexRdma::init(uint64_t bucket_cnt) {
-	uint64_t index_size = (g_synth_table_size/g_node_cnt)*(sizeof(IndexInfo)+1);
+	// uint64_t index_size = (g_synth_table_size/g_node_cnt)*(sizeof(IndexInfo)+1);
 
 	index_info = (IndexInfo*)rdma_global_buffer;
 
@@ -89,21 +88,23 @@ RC IndexRdma::init(uint64_t bucket_cnt) {
 	for (i = 0; i < g_synth_table_size/g_node_cnt; i ++) {
 		index_info[i].init();
 	}
-
+	_index_size = g_synth_table_size/g_node_cnt;
  	printf("init %ld index\n",i);
 	return RCOK;
 }
 #endif
 
+uint64_t IndexRdma::get_count() {
+	#if WORKLOAD == TPCC
+	return _index_size;
+	#else
+	return g_synth_table_size/g_node_cnt;
+	#endif
+}
+
 RC IndexRdma::init(int part_cnt, table_t *table, uint64_t bucket_cnt) {
 #if WORKLOAD == TPCC
     bucket_cnt = part_cnt;
-    // if(table->get_table_name()=="ITEM")bucket_cnt = 0;
-    // else if(table->get_table_name()=="WAREHOUSE")bucket_cnt = 1;
-    // else if(table->get_table_name()=="DISTRICT")bucket_cnt = 2;
-    // else if(table->get_table_name()=="CUSTOMER")bucket_cnt = 3;
-     // else if(table->get_table_name()=="STOCK")bucket_cnt = 4;
-    // else bucket_cnt = 5;
 #endif
     init(bucket_cnt);
 	this->table = table;
@@ -170,6 +171,19 @@ RC IndexRdma::index_insert_nonunique(idx_key_t key, itemid_t * item, int part_id
 
 	// 3. release the latch
 	release_latch(cur_bkt);
+	return rc;
+}
+
+RC IndexRdma::get_index_by_id(uint64_t index, itemid_t * &item, int part_id) {
+	RC rc = RCOK;
+
+	uint64_t index_key = index;
+
+	item = (itemid_t *)mem_allocator.alloc(sizeof(itemid_t));
+	item->location = index_info[index_key].address;
+	item->type = index_info[index_key].type;
+	item->valid = index_info[index_key].valid;
+
 	return rc;
 }
 

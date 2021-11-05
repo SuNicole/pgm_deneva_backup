@@ -57,6 +57,7 @@
 #include "rdma_silo.h"
 #include "rdma_mvcc.h"
 #include "rdma_2pl.h"
+#include "rdma_opt_2pl.h"
 #include "rdma_maat.h"
 #include "rdma_ts1.h"
 #include "rdma_cicada.h"
@@ -106,6 +107,9 @@ rdma_mvcc rmvcc_man;
 #endif
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 RDMA_2pl r2pl_man;
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT
+RDMA_opt_2pl o2pl_man;
 #endif
 #if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT
 RdmaTxnTable rdma_txn_table;

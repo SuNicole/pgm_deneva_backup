@@ -37,10 +37,13 @@ public:
 
   virtual RC index_insert_nonunique(idx_key_t key, itemid_t *item, int part_id = -1) = 0;
 
+  virtual RC get_index_by_id(uint64_t index, itemid_t * &item, int part_id=-1) = 0;
+  
   virtual RC index_read(idx_key_t key, itemid_t *&item, int part_id = -1) = 0;
 
   virtual RC index_read(idx_key_t key, itemid_t *&item, int part_id = -1, int thd_id = 0) = 0;
 
+  virtual uint64_t get_count() = 0;
 	// TODO implement index_remove
   virtual RC index_remove(idx_key_t key) {
     return RCOK;

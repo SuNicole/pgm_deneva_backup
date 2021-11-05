@@ -47,11 +47,12 @@ public:
 	bool 		index_exist(idx_key_t key); // check if the key exist.
 	RC 			index_insert(idx_key_t key, itemid_t * item, int part_id = -1);
 	RC 			index_insert_nonunique(idx_key_t key, itemid_t * item, int part_id = -1) { return RCOK;}
+	RC 			get_index_by_id(uint64_t index, itemid_t * &item, int part_id=-1) {return RCOK;};
     RC          index_read(idx_key_t key, itemid_t *&item, uint64_t thd_id, int64_t part_id = -1);
 	RC	 		index_read(idx_key_t key, itemid_t * &item, int part_id = -1);
 	RC	 		index_read(idx_key_t key, itemid_t * &item);
 	RC 			index_next(uint64_t thd_id, itemid_t * &item, bool samekey = false);
-
+	uint64_t 	get_count() {return 0;}
 private:
 	// index structures may have part_cnt = 1 or PART_CNT.
 	uint64_t part_cnt;

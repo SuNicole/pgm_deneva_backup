@@ -90,6 +90,9 @@ class rdma_mvcc;
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 class RDMA_2pl;
 #endif
+#if CC_ALG == RDMA_OPT_NO_WAIT
+class RDMA_opt_2pl;
+#endif
 #if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT
 class RdmaTxnTable;
 #endif
@@ -173,6 +176,9 @@ extern rdma_mvcc rmvcc_man;
 #endif
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 extern RDMA_2pl r2pl_man;
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT
+extern RDMA_opt_2pl o2pl_man;
 #endif
 #if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT
 extern RdmaTxnTable rdma_txn_table;
