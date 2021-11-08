@@ -75,6 +75,7 @@ InputThread * input_thds;
 OutputThread * output_thds;
 AbortThread * abort_thds;
 LogThread * log_thds;
+HotThread * hot_thds;
 #if CC_ALG == CALVIN || CC_ALG == RDMA_CALVIN
 CalvinLockThread * calvin_lock_thds;
 CalvinSequencerThread * calvin_seq_thds;
@@ -355,6 +356,9 @@ int main(int argc, char *argv[]) {
 #if CC_ALG == CALVIN || CC_ALG == RDMA_CALVIN
 		all_thd_cnt += 2; // sequencer + scheduler thread
 #endif
+#if CC_ALG == RDMA_OPT_NO_WAIT
+		all_thd_cnt += 1;
+#endif
 
 	if (g_ts_alloc == LTS_TCP_CLOCK) {
 		printf("Initializing tcp queue... ");
@@ -383,6 +387,9 @@ int main(int argc, char *argv[]) {
 #if CC_ALG == CALVIN || CC_ALG == RDMA_CALVIN
 	calvin_lock_thds = new CalvinLockThread[1];
 	calvin_seq_thds = new CalvinSequencerThread[1];
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT
+	hot_thds = new HotThread[1];
 #endif
 	// query_queue should be the last one to be initialized!!!
 	// because it collects txn latency
@@ -500,6 +507,10 @@ int main(int argc, char *argv[]) {
 #if USE_WORK_NUM_THREAD
 	worker_num_thds[0].init(id,g_node_id,m_wl);
 	pthread_create(&p_thds[id++], &attr, run_thread, (void *)&worker_num_thds[0]);
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT 
+	hot_thds[0].init(id,g_node_id,m_wl);
+	pthread_create(&p_thds[id++], &attr, run_thread, (void *)&hot_thds[0]);
 #endif
 	for (uint64_t i = 0; i < all_thd_cnt; i++) pthread_join(p_thds[i], NULL);
 

@@ -95,7 +95,7 @@ RC row_t::init(table_t *host_table, uint64_t part_id, uint64_t row_id) {
 #if CC_ALG == RDMA_OPT_NO_WAIT
 	conflict_num = 0;
 	lock_info = 0;
-	is_hot = true;
+	is_hot = false;
 #endif
 #if CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
     lock_type = 0;

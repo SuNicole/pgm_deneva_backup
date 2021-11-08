@@ -224,6 +224,11 @@ UInt32 g_work_thread_cnt = 1;
 #else
 UInt32 g_work_thread_cnt = 0;
 #endif
+#if CC_ALG == RDMA_OPT_NO_WAIT
+UInt32 g_hot_thread_cnt = 1;
+#else
+UInt32 g_hot_thread_cnt = 0;
+#endif
 UInt32 g_send_thread_cnt = SEND_THREAD_CNT;
 #if CC_ALG == CALVIN || CC_ALG == RDMA_CALVIN
 // sequencer + scheduler thread

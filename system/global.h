@@ -301,6 +301,7 @@ extern UInt32 g_thread_cnt;
 extern UInt32 g_abort_thread_cnt;
 extern UInt32 g_logger_thread_cnt;
 extern UInt32 g_work_thread_cnt;
+extern UInt32 g_hot_thread_cnt;
 extern UInt32 g_tcp_thread_cnt;
 extern UInt32 g_send_thread_cnt;
 extern UInt32 g_rem_thread_cnt;
