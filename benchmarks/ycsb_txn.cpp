@@ -14,6 +14,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+#include <map>  
+#include <unordered_map>
 
 #include "global.h"
 #include "config.h"
@@ -113,7 +115,7 @@ RC YCSBTxnManager::run_txn(yield_func_t &yield, uint64_t cor_id) {
 	if(IS_LOCAL(txn->txn_id) && state == YCSB_0 && next_record_id == 0) {
 		DEBUG("Running txn %ld\n",txn->txn_id);
 #if DEBUG_PRINTF
-		printf("[txn start]txn：%d，ts：%lu\n",txn->txn_id,get_timestamp());
+		printf("[txn start]txn: %d, ts: %lu\n",txn->txn_id,get_timestamp());
 #endif
 		//query->print();
 		query->partitions_touched.add_unique(GET_PART_ID(0,g_node_id));
@@ -278,7 +280,6 @@ RC YCSBTxnManager::send_remote_one_side_request(yield_func_t &yield, ycsb_reques
 #if CC_ALG == RDMA_SILO
     if(req->acctype == RD || req->acctype == WR){
 		uint64_t tts = get_timestamp();
-
 		//read remote data
 #if BATCH_INDEX_AND_READ
 		row_t * test_row = reqId_row.find(next_record_id)->second;
@@ -383,44 +384,68 @@ RC YCSBTxnManager::send_remote_one_side_request(yield_func_t &yield, ycsb_reques
 	return rc;
 #endif
 
-
 #if CC_ALG == RDMA_OPT_NO_WAIT
-    uint64_t lock_info_pointer = row_t::get_lock_info_pointer(m_item->offset);
-    uint64_t conflict_pointer = m_item->offset;
+    uint64_t remote_lock_info_pointer = row_t::get_lock_info_pointer(m_item->offset);
+    uint64_t remote_rcnt_pos_pointer = row_t::get_rcnt_pos_pointer(m_item->offset);	
+    uint64_t remote_conflict_pointer = m_item->offset;
     uint64_t new_lock_info = get_txn_id() + 1;
 	rc = RCOK;
     lock_t lock_type = LOCK_NONE;
 	row_t * test_row = NULL;
 	if(req->acctype == RD || req->acctype == SCAN) {
 		uint64_t try_lock = -1;
-	#if USE_DBPAOR == true
-		test_row = cas_and_read_remote(yield, try_lock,loc,lock_info_pointer,conflict_pointer,0,new_lock_info,cor_id);
+		#if USE_DBPAOR
+			// test_row = cas_and_read_remote(yield, try_lock,loc,remote_lock_info_pointer,remote_conflict_pointer,0,new_lock_info,cor_id);
+			// if(try_lock != 0){ //CAS fail: Ignore read content 
+			// 	faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+			// 	row_local = NULL;
+			// 	txn->rc = Abort;
+			// 	mem_allocator.free(m_item, sizeof(itemid_t));
+			// 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+			// 	return Abort; //原子性被破坏，CAS失败			
+			// }		
+		#else
+			try_lock = cas_remote_content(yield,loc,remote_lock_info_pointer,0,new_lock_info,cor_id);
+			if(try_lock != 0){ //cas fail 
+#if !ALL_ES_LOCK
+#if BATCH_FAA
+				local_record_faa(req->key, loc, remote_conflict_pointer);
+#else
+				faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+#endif
+#endif 
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				return Abort; //原子性被破坏，CAS失败						
+			}
+			//cas success: read remote data
+			test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);
+		#endif
 		assert(test_row->get_primary_key() == req->key);
-	#else
-		try_lock = cas_remote_content(yield,loc,lock_info_pointer,0,new_lock_info,cor_id);
-		//read remote data
-		test_row = read_remote_row(yield,loc,conflict_pointer,cor_id);
-		assert(test_row->get_primary_key() == req->key);
-	#endif
-		if (try_lock != 0 || test_row->lock_info != new_lock_info) {
-		    faa_remote_content(yield,loc,conflict_pointer,cor_id);
-			// printf("407 lock failed try_lock = %ld now it is %ld\n", try_lock, test_row->lock_info);
-            return Abort;
-		}
-		int write_size = row_t::get_row_write_size(test_row->tuple_size);
-		char * write_pointer = row_t::get_write_pointer((char*)test_row);
+#if !ALL_ES_LOCK
+		if(test_row->rcnt_pos - test_row->rcnt_neg > 0){
+#if BATCH_FAA
+			local_record_faa(req->key, loc, remote_conflict_pointer);
+#else
+			faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+#endif
+		} 
+#endif
 		if (test_row->is_hot) {
-            test_row->read_cnt ++;
+            test_row->rcnt_pos ++;
             test_row->lock_info = 0;
             lock_type = DLOCK_SH;
-            faa_remote_content(yield,loc,conflict_pointer,cor_id);
-			assert(write_remote_row(yield,loc,write_size,lock_info_pointer,write_pointer, cor_id) == true);
-        } else if(test_row->read_cnt > 0) {
+			uint64_t local_rcnt_pos_pointer = row_t::get_rcnt_pos_pointer((uint64_t)test_row);
+			assert(write_remote_row(yield,loc,sizeof(test_row->lock_info)+sizeof(test_row->rcnt_pos),remote_rcnt_pos_pointer,(char *)local_rcnt_pos_pointer, cor_id) == true);
+        } 
+		else if(test_row->rcnt_pos - test_row->rcnt_neg > 0) {
 			test_row->lock_info = 0;
-            faa_remote_content(yield,loc,conflict_pointer,cor_id);
-			assert(write_remote_row(yield,loc,write_size,lock_info_pointer,write_pointer, cor_id) == true);
+			uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)test_row);
+			assert(write_remote_row(yield,loc,sizeof(test_row->lock_info),remote_lock_info_pointer, (char*)local_lock_info_pointer, cor_id) == true);
 			return Abort;
-        } else {
+        } 
+		else {
 			lock_type = DLOCK_EX;
 		}
 		access_t type = req->acctype;
@@ -429,31 +454,311 @@ RC YCSBTxnManager::send_remote_one_side_request(yield_func_t &yield, ycsb_reques
 	}else if (req->acctype == WR){
 		uint64_t try_lock = -1;
 	#if USE_DBPAOR == true
-		test_row = cas_and_read_remote(yield, try_lock,loc,lock_info_pointer,conflict_pointer,0,new_lock_info,cor_id);
-		assert(test_row->get_primary_key() == req->key);
+		// test_row = cas_and_read_remote(yield, try_lock,loc,remote_lock_info_pointer,remote_conflict_pointer,0,new_lock_info,cor_id);
+		// if(try_lock != 0){ //CAS fail: Ignore read content 
+		// 	row_local = NULL;
+		// 	txn->rc = Abort;
+		// 	mem_allocator.free(m_item, sizeof(itemid_t));
+		// 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+		// 	return Abort; //原子性被破坏，CAS失败			
+		// }		
 	#else
-		try_lock = cas_remote_content(yield,loc,lock_info_pointer,0,new_lock_info,cor_id);
-		//read remote data
-		test_row = read_remote_row(yield,loc,conflict_pointer,cor_id);
-		assert(test_row->get_primary_key() == req->key);
-	#endif
-		if (try_lock != 0 || test_row->lock_info != new_lock_info) {
-		    // faa_remote_content(yield,loc,conflict_pointer,cor_id);
-			// printf("txn %ld lock failed try_lock = %ld now it is %ld\n", new_lock_info, try_lock, test_row->lock_info);
-            return Abort;
+		try_lock = cas_remote_content(yield,loc,remote_lock_info_pointer,0,new_lock_info,cor_id);
+		if(try_lock != 0){ //cas fail 
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				return Abort; //原子性被破坏，CAS失败						
 		}
-		int write_size = row_t::get_row_write_size(test_row->tuple_size);
-		char * write_pointer = row_t::get_write_pointer((char*)test_row);
-		if(test_row->read_cnt > 0) {
+		//cas success: read remote data
+		test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);
+	#endif
+		assert(test_row->get_primary_key() == req->key);
+		if(test_row->rcnt_pos - test_row->rcnt_neg > 0) {
 			test_row->lock_info = 0;
-            // faa_remote_content(yield,loc,conflict_pointer,cor_id);
-			assert(write_remote_row(yield,loc,sizeof(uint64_t), lock_info_pointer,write_pointer, cor_id) == true);
+			uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)test_row);
+            // faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+			assert(write_remote_row(yield,loc,sizeof(uint64_t), remote_lock_info_pointer, (char *)local_lock_info_pointer, cor_id) == true);
 			return Abort;
         } else {
 			lock_type = DLOCK_EX;
 		}
 		access_t type = req->acctype;
         rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
+		return rc;
+	}
+#endif
+
+#if CC_ALG == RDMA_OPT_WAIT_DIE
+    uint64_t remote_lock_info_pointer = row_t::get_lock_info_pointer(m_item->offset);
+    uint64_t remote_rcnt_pos_pointer = row_t::get_rcnt_pos_pointer(m_item->offset);	
+    uint64_t remote_conflict_pointer = m_item->offset;
+	uint64_t tts = get_timestamp();
+    lock_t lock_type = LOCK_NONE;
+
+	if(req->acctype == RD || req->acctype == SCAN) {
+		uint64_t try_lock = -1;
+		row_t* test_row;
+read_wait_here:
+#if USE_DBPAOR
+		test_row = cas_and_read_remote(yield,try_lock,loc,remote_lock_info_pointer,remote_conflict_pointer, 0, 1, cor_id);
+#else
+		try_lock = cas_remote_content(yield,loc,remote_lock_info_pointer,0,1,cor_id);
+		test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);
+#endif
+		assert(test_row->get_primary_key() == req->key);
+		if(try_lock > 1){ //already locked by write
+			//wait or abort
+			if(tts < try_lock && !simulation->is_done()){ //wait
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				goto read_wait_here;
+			}else{ //abort
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort;				
+			}
+		}else if(try_lock == 1){ //already locked by read
+#if !ALL_ES_LOCK
+#if BATCH_FAA
+			local_record_faa(req->key, loc, remote_conflict_pointer);
+#else
+			faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+#endif
+#endif
+			// if(test_row->is_hot){ //wait
+			// 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+			// 	goto read_wait_here;
+			// }else{ 
+
+			//find the minimum ts that is currently holding the lock
+			uint64_t min_lock_ts = 0;
+			bool find_one = false;
+			for(int i=0;i<LOCK_LENGTH;i++){
+				if(!find_one && test_row->ts[i]!=0){
+					find_one = true;
+					min_lock_ts = test_row->ts[i];
+				}
+				if(test_row->ts[i]!=0 && test_row->ts[i] < min_lock_ts){
+					min_lock_ts = test_row->ts[i];
+				}
+			}
+			//wait or abort
+			if(tts < min_lock_ts && !simulation->is_done()){ //wait
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				goto read_wait_here;
+			}else{ //abort
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort;					
+			}
+			
+			// }
+		}
+		//cas success
+   		uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)test_row);
+    	uint64_t local_rcnt_pos_pointer = row_t::get_rcnt_pos_pointer((uint64_t)test_row);	
+		bool ts_updated = false;
+		if(test_row->is_hot){
+			test_row->rcnt_pos++;
+			test_row->lock_info = 0;
+			int iter;
+			for(iter=0;iter<LOCK_LENGTH;iter++){
+				if(test_row->ts[iter]==0){
+					test_row->ts[iter] = tts;
+					break;
+				}
+			}
+			if(iter == LOCK_LENGTH){ //no empty place in ts array
+				//unlock and abort
+				write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort;						
+			}
+			uint64_t operate_size = sizeof(test_row->rcnt_pos)+sizeof(test_row->lock_info) + sizeof(test_row->ts[0])*LOCK_LENGTH;
+			write_remote_row(yield, loc, operate_size, remote_rcnt_pos_pointer,(char*)local_rcnt_pos_pointer,cor_id);
+			ts_updated = true;
+			lock_type = DLOCK_SH;
+		}else if(test_row->rcnt_pos - test_row->rcnt_neg > 0){
+			//find the minimum ts that is currently holding the lock
+			uint64_t min_lock_ts = 0;
+			bool find_one = false;
+			for(int i=0;i<LOCK_LENGTH;i++){
+				if(!find_one && test_row->ts[i]!=0){
+					find_one = true;
+					min_lock_ts = test_row->ts[i];
+				}
+				if(test_row->ts[i]!=0 && test_row->ts[i] < min_lock_ts){
+					min_lock_ts = test_row->ts[i];
+				}
+			}
+			//wait or abort
+			if(tts < min_lock_ts){ //wait
+				while(test_row->rcnt_pos - test_row->rcnt_neg > 0 && !simulation->is_done()){
+					mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+					test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);				
+				}
+				if(test_row->rcnt_pos - test_row->rcnt_neg > 0){ //simulation is done
+					//unlock and abort
+					test_row->lock_info = 0;
+					write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
+					row_local = NULL;
+					txn->rc = Abort;
+					mem_allocator.free(m_item, sizeof(itemid_t));
+					mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+					return Abort;	
+				}
+				//now : test_row->rcnt_pos - test_row->rcnt_neg = 0
+			}else{ //unlock and abort
+				test_row->lock_info = 0;
+				write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort;						
+			}
+		}
+		//write ts array
+		if(!ts_updated){
+			int iter;
+			for(iter=0;iter<LOCK_LENGTH;iter++){
+				if(test_row->ts[iter]==0){
+					test_row->ts[iter] = tts;
+					break;
+				}
+			}
+			if(iter == LOCK_LENGTH){ //no empty place in ts array
+				//unlock and abort
+				test_row->lock_info = 0;
+				write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort; 					
+			}
+			uint64_t remote_ts_pointer = row_t::get_ts_pointer(m_item->offset,iter);
+			uint64_t local_ts_pointer = row_t::get_ts_pointer((uint64_t)test_row,iter);
+			write_remote_row(yield, loc, sizeof(test_row->ts[iter]), remote_ts_pointer,(char*)local_ts_pointer,cor_id);
+			lock_type = DLOCK_EX;
+		}
+		access_t type = req->acctype;
+        rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
+#if DEBUG_PRINTF
+		printf("---thread id: %lu, remote lock read suc, lock location: %lu; %p, txn id: %lu\n", get_thd_id(), loc, remote_mr_attr[loc].buf + m_item->offset, get_txn_id());
+#endif
+		return rc;
+	}else if (req->acctype == WR){
+		uint64_t try_lock = -1;
+		row_t* test_row;
+write_wait_here:
+#if USE_DBPAOR
+		test_row = cas_and_read_remote(yield,try_lock,loc,remote_lock_info_pointer,remote_conflict_pointer, 0, tts, cor_id);
+#else
+		try_lock = cas_remote_content(yield,loc,remote_lock_info_pointer,0,tts,cor_id);
+		test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);
+#endif
+		assert(test_row->get_primary_key() == req->key);
+		if(try_lock > 1){ //already locked by write
+			//wait or abort
+			if(tts < try_lock && !simulation->is_done()){ //wait
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				// printf("---write wait here\n");
+				goto write_wait_here;
+			}else{ //abort
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort;				
+			}
+		}else if(try_lock == 1){ //already locked by read
+			// if(test_row->is_hot){ //wait
+			// 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+			// 	goto write_wait_here;
+			// }else{ 
+
+			//find the minimum ts that is currently holding the lock
+			uint64_t min_lock_ts = 0;
+			bool find_one = false;
+			for(int i=0;i<LOCK_LENGTH;i++){
+				if(!find_one && test_row->ts[i]!=0){
+					find_one = true;
+					min_lock_ts = test_row->ts[i];
+				}
+				if(test_row->ts[i]!=0 && test_row->ts[i] < min_lock_ts){
+					min_lock_ts = test_row->ts[i];
+				}
+			}
+			//wait or abort
+			if(tts < min_lock_ts && !simulation->is_done()){ //wait
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				goto write_wait_here;
+			}else{ //abort
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort; 					
+			}
+
+			// }
+		}
+		//cas success
+		uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)test_row);
+		if(test_row->rcnt_pos - test_row->rcnt_neg > 0){
+			//find the minimum ts that is currently holding the lock
+			uint64_t min_lock_ts = 0;
+			bool find_one = false;
+			for(int i=0;i<LOCK_LENGTH;i++){
+				if(!find_one && test_row->ts[i]!=0){
+					find_one = true;
+					min_lock_ts = test_row->ts[i];
+				}
+				if(test_row->ts[i]!=0 && test_row->ts[i] < min_lock_ts){
+					min_lock_ts = test_row->ts[i];
+				}
+			}
+			//wait or abort
+			if(tts < min_lock_ts){ //wait
+				while(test_row->rcnt_pos - test_row->rcnt_neg > 0 && !simulation->is_done()){
+					mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+					test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);				
+				}
+				if(test_row->rcnt_pos - test_row->rcnt_neg > 0){ //simulation is done
+					//unlock and abort
+					test_row->lock_info = 0;
+					write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
+					row_local = NULL;
+					txn->rc = Abort;
+					mem_allocator.free(m_item, sizeof(itemid_t));
+					mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+					return Abort;	
+				}
+				//now : test_row->rcnt_pos - test_row->rcnt_neg = 0
+			}else{ //unlock and abort
+				test_row->lock_info = 0;
+				write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
+				row_local = NULL;
+				txn->rc = Abort;
+				mem_allocator.free(m_item, sizeof(itemid_t));
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				return Abort;						
+			}
+		}
+		lock_type = DLOCK_EX;
+		access_t type = req->acctype;
+        rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
+#if DEBUG_PRINTF
+		printf("---thread id: %lu, remote lock write suc, lock location: %lu; %p, txn id: %lu\n", get_thd_id(), loc, remote_mr_attr[loc].buf + m_item->offset, get_txn_id());
+#endif		
 		return rc;
 	}
 #endif
@@ -609,12 +914,12 @@ if(req->acctype == RD || req->acctype == WR){
 retry_lock:
 		uint64_t try_lock;
 		row_t* test_row = cas_and_read_remote(yield,try_lock,loc,m_item->offset,m_item->offset,0,tts, cor_id);
-		if(try_lock == 0) {
-			test_row->lock_owner = txn->txn_id;			
-			assert(write_remote_row(yield, loc, row_t::get_row_size(test_row->tuple_size), m_item->offset,(char*)test_row, cor_id) == true);
-		}
+		// if(try_lock == 0) {
+		// 	test_row->lock_owner = txn->txn_id;			
+		// 	assert(write_remote_row(yield, loc, row_t::get_row_size(test_row->tuple_size), m_item->offset,(char*)test_row, cor_id) == true);
+		// }
 		if(try_lock != 0){// CAS fail
-			if(tts <= try_lock){ //wait
+			if(tts < try_lock && !simulation->is_done()){ //wait
 				num_atomic_retry++;
 				total_num_atomic_retry++;
 				if(num_atomic_retry > max_num_atomic_retry) max_num_atomic_retry = num_atomic_retry;	
@@ -640,7 +945,7 @@ retry_lock:
         try_lock = cas_remote_content(yield,loc,m_item->offset,0,tts,cor_id);
 
 		if(try_lock != 0){ // cas fail
-			if(tts <= try_lock){  //wait
+			if(tts < try_lock && !simulation->is_done()){  //wait
 
 				num_atomic_retry++;
 				total_num_atomic_retry++;
@@ -674,14 +979,21 @@ retry_lock:
 #if CC_ALG == RDMA_WAIT_DIE
 	if(req->acctype == RD || req->acctype == WR) {
 		uint64_t tts = get_timestamp();
-#if USE_DBPAOR == true
-#endif
-#if USE_DBPAOR == false
 retry_lock:
         uint64_t try_lock = -1;
 		uint64_t lock_type = 0;
 		bool conflict = false;
 		bool canwait = true;
+		row_t * test_row;
+#if USE_DBPAOR == true
+		test_row = cas_and_read_remote(yield,try_lock,loc,m_item->offset,m_item->offset,0,txn->txn_id, cor_id);
+		if(try_lock != 0){ // cas fail
+			mem_allocator.free(m_item, sizeof(itemid_t));
+			mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+			rc = Abort;
+			return rc;
+		}
+#else
         try_lock = cas_remote_content(yield,loc,m_item->offset,0,txn->txn_id,cor_id);
 		if(try_lock != 0){ // cas fail
 			mem_allocator.free(m_item, sizeof(itemid_t));
@@ -705,7 +1017,10 @@ retry_lock:
 			// 	return Abort;
 			// }
 		}
-		row_t * test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
+		test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
+#endif
+        assert(test_row->get_primary_key() == req->key);
+
 		lock_type = test_row->lock_type;
 		if(lock_type == 0) {
 			test_row->lock_owner[0] = txn->txn_id;
@@ -760,11 +1075,7 @@ retry_lock:
 				rc = Abort;
 				return rc;
 			}
-		}
-		
-		
-        assert(test_row->get_primary_key() == req->key);
-#endif
+		}		
 		access_t type = req->acctype;
 		rc = preserve_access(row_local, m_item, test_row, type, test_row->get_primary_key(), loc);
 		return rc;
@@ -1476,7 +1787,7 @@ RC YCSBTxnManager::run_ycsb_0(yield_func_t &yield,ycsb_request * req,row_t *& ro
     mem_allocator.free(m_item, sizeof(itemid_t));
   }
   INC_STATS(get_thd_id(),trans_benchmark_compute_time,get_sys_clock() - starttime);
-  rc = get_row(yield,row, type,row_local,cor_id);
+  rc = get_row(yield,row, type,row_local,cor_id, req->key);
   return rc;
 }
 

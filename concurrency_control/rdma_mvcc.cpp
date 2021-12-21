@@ -366,7 +366,7 @@ RC rdma_mvcc::finish(yield_func_t &yield, RC rc,TxnManager * txnMng, uint64_t co
                     INC_STATS(txnMng->get_thd_id(), worker_yield_cnt, 1);
                     INC_STATS(txnMng->get_thd_id(), worker_yield_time, yield_endtime - txnMng->h_thd->last_yield_time);
                     INC_STATS(txnMng->get_thd_id(), worker_idle_time, yield_endtime - txnMng->h_thd->last_yield_time);
-                    dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_thread_cnt]->poll_send_comp();
+                    dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_total_thread_cnt]->poll_send_comp();
                     waitcomp_time = get_sys_clock();
                     
                     INC_STATS(txnMng->get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);
@@ -375,7 +375,7 @@ RC rdma_mvcc::finish(yield_func_t &yield, RC rc,TxnManager * txnMng, uint64_t co
                 txnMng->h_thd->cor_process_starttime[cor_id] = get_sys_clock();
                 // RDMA_ASSERT(res_p == rdmaio::IOCode::Ok);
 #else
-                auto dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_thread_cnt]->wait_one_comp();
+                auto dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_total_thread_cnt]->wait_one_comp();
                 RDMA_ASSERT(dbres1 == IOCode::Ok);
                 endtime = get_sys_clock();
                 INC_STATS(txnMng->get_thd_id(), worker_waitcomp_time, endtime-starttime);

@@ -72,7 +72,7 @@ public:
 	uint64_t    location;   //node id of server the data location
 	uint64_t    offset;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG == RDMA_OPT_NO_WAIT ||  CC_ALG == RDMA_OPT_WAIT_DIE
 	uint64_t    location;   //node id of server the data location
 	uint64_t    offset;
 	lock_t lock_type;
@@ -221,11 +221,11 @@ public:
 	void release_locks(yield_func_t &yield, RC rc, uint64_t cor_id);
 
 bool rdma_one_side() {
-  if (CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_MAAT || CC_ALG ==RDMA_TS1 || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT) return true;
+  if (CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_MAAT || CC_ALG ==RDMA_TS1 || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE) return true;
   else return false;
 }
 
-    row_t * read_remote_row(uint64_t target_server,uint64_t remote_offset);
+	row_t * read_remote_row(uint64_t target_server,uint64_t remote_offset);
     itemid_t * read_remote_index(uint64_t target_server,uint64_t remote_offset,uint64_t key);
 // #if CC_ALG == RDMA_MAAT
     RdmaTxnTableNode * read_remote_timetable(uint64_t target_server,uint64_t remote_offset);
@@ -240,6 +240,9 @@ bool rdma_one_side() {
 	uint64_t faa_remote_content(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset, uint64_t cor_id);
     bool loop_cas_remote(uint64_t target_server, uint64_t remote_offset, uint64_t old_value,uint64_t new_value);
     RC preserve_access(row_t *&row_local, itemid_t* m_item, row_t *test_row, access_t type, uint64_t key, uint64_t loc, lock_t lock_type = LOCK_NONE);
+#if BATCH_FAA
+	uint64_t local_record_faa(uint64_t req_key,uint64_t loc,uint64_t pointer);
+#endif
 #if USE_DBPAOR == true
 	void batch_unlock_remote(yield_func_t &yield, uint64_t cor_id, int loc, RC rc, TxnManager * txnMng , vector<vector<uint64_t>> remote_index_origin,ts_t time = 0, vector<vector<uint64_t>> remote_num = {{0}});
 	row_t * cas_and_read_remote(yield_func_t &yield, uint64_t& try_lock, uint64_t target_server, uint64_t cas_offset, uint64_t read_offset, uint64_t compare, uint64_t swap, uint64_t cor_id);
@@ -304,7 +307,7 @@ bool rdma_one_side() {
     int             write_set[100];
     int*            read_set;
 #endif
-#if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT ||  CC_ALG == RDMA_OPT_WAIT_DIE
     int             write_set[100];
     int*            read_set;
 	int				num_atomic_retry; //num of txn atomic_retry
@@ -438,7 +441,7 @@ protected:
 	itemid_t *      index_read(INDEX * index, idx_key_t key, int part_id, int count);
 	RC get_lock(row_t * row, access_t type);
 	//RC get_row(row_t * row, access_t type, row_t *& row_rtn);
-    RC get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& row_rtn,uint64_t cor_id);
+    RC get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& row_rtn,uint64_t cor_id, uint64_t req_key = 0);
 	RC get_row_post_wait(row_t *& row_rtn);
 
 	// For Waiting

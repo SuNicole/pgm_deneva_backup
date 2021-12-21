@@ -51,6 +51,9 @@
 #include "da.h"
 #include "pps.h"
 #include "wl.h"
+#include "transport/rdma.h"
+#include "qps/op.hh"
+
 
 void WorkerThread::setup() {
 	if( get_thd_id() == 0) {
@@ -653,7 +656,7 @@ void WorkerThread::create_routines(int coroutines) {
 void WorkerThread::master_routine(yield_func_t &yield, int cor_id) {
     tsetup();
     printf("Running WorkerThread %ld:%ld\n",_thd_id, cor_id);
-    printf("This is new master routine\n");
+    // printf("This is new master routine\n");
     //yield(_routines[1]);
     for(uint64_t i = 0; i <= COROUTINE_CNT; i++) {
       pendings[i] = 0;
@@ -1609,15 +1612,98 @@ RC WorkerNumThread::run() {
   fflush(stdout);
   return FINISH;
 }
-#if CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
 void HotThread::setup() {
+}
+
+
+row_t * HotThread::ht_read_remote_row(uint64_t target_server,uint64_t remote_offset){
+    uint64_t operate_size = row_t::get_row_size(ROW_DEFAULT_SIZE);
+    uint64_t thd_id = _thd_id;  //this is the only difference with read_remote_row, consider optimize later
+    char *local_buf = Rdma::get_row_client_memory(thd_id);
+
+	// uint64_t starttime;
+	// uint64_t endtime;
+	// starttime = get_sys_clock();
+    auto res_s = rc_qp[target_server][thd_id]->send_normal(
+		{.op = IBV_WR_RDMA_READ,
+		.flags = IBV_SEND_SIGNALED,
+		.len = operate_size,
+		.wr_id = 0},
+		{.local_addr = reinterpret_cast<rdmaio::RMem::raw_ptr_t>(local_buf),
+		.remote_addr = remote_offset,
+		.imm_data = 0});
+	RDMA_ASSERT(res_s == rdmaio::IOCode::Ok);
+	auto res_p = rc_qp[target_server][thd_id]->wait_one_comp();
+	RDMA_ASSERT(res_p == rdmaio::IOCode::Ok);
+
+	// endtime = get_sys_clock();
+	// INC_STATS(get_thd_id(), rdma_read_time, endtime-starttime);
+	// INC_STATS(get_thd_id(), rdma_read_cnt, 1);
+	// INC_STATS(get_thd_id(), worker_idle_time, endtime-starttime);
+	// DEL_STATS(get_thd_id(), worker_process_time, endtime-starttime);
+	// INC_STATS(get_thd_id(), worker_waitcomp_time, endtime-starttime);
+
+    row_t *test_row = (row_t *)mem_allocator.alloc(row_t::get_row_size(ROW_DEFAULT_SIZE));
+    memcpy(test_row, local_buf, operate_size);
+
+    return test_row;
+}
+
+uint64_t HotThread::ht_cas_remote_content(uint64_t target_server,uint64_t remote_offset,uint64_t old_value,uint64_t new_value){
+    
+    rdmaio::qp::Op<> op;
+    uint64_t thd_id = _thd_id;  //this is the only difference with cas_remote_content, consider optimize later
+    uint64_t *local_buf = (uint64_t *)Rdma::get_row_client_memory(thd_id);
+    auto mr = client_rm_handler->get_reg_attr().value();
+
+	// uint64_t starttime;
+	// uint64_t endtime;
+	// starttime = get_sys_clock();
+
+    op.set_atomic_rbuf((uint64_t*)(remote_mr_attr[target_server].buf + remote_offset), remote_mr_attr[target_server].key).set_cas(old_value, new_value);
+    assert(op.set_payload(local_buf, sizeof(uint64_t), mr.key) == true);
+    auto res_s2 = op.execute(rc_qp[target_server][thd_id], IBV_SEND_SIGNALED);
+
+    // INC_STATS(get_thd_id(), worker_oneside_cnt, 1);
+    RDMA_ASSERT(res_s2 == IOCode::Ok);
+    auto res_p2 = rc_qp[target_server][thd_id]->wait_one_comp();
+    RDMA_ASSERT(res_p2 == IOCode::Ok);
+
+  //   endtime = get_sys_clock();
+	// INC_STATS(get_thd_id(), worker_idle_time, endtime-starttime);
+	// INC_STATS(get_thd_id(), worker_waitcomp_time, endtime-starttime);
+	// DEL_STATS(get_thd_id(), worker_process_time, endtime-starttime);
+
+    return *local_buf;
 }
 
 RC HotThread::run() {
   tsetup();
+  printf("Running HotThread %ld\n",_thd_id);
 
 	while(!simulation->is_done()) {
     progress_stats();
+    
+#if BATCH_FAA
+      // printf("-----hotthread circular");
+    for(auto iter:accum_faa){
+      uint64_t cnum = iter.second.accum_num;
+      // printf("-----cnum: %d\n", cnum);
+      if(cnum>350){  
+        row_t * row_read = ht_read_remote_row(iter.second.loc,iter.second.pointer);
+        uint64_t old_num = row_read->conflict_num;    
+        mem_allocator.free(row_read, row_t::get_row_size(ROW_DEFAULT_SIZE));        
+        uint64_t cas_ret = ht_cas_remote_content(iter.second.loc,iter.second.pointer,old_num,old_num+cnum);
+        while(cas_ret!=old_num){ //batch faa remote until success
+            old_num = cas_ret;
+            cas_ret = ht_cas_remote_content(iter.second.loc,iter.second.pointer,old_num,old_num+cnum);
+        }
+        iter.second.accum_num-=cnum;
+      }
+    }
+#endif
+
     int index_length = 0;
     INDEX ** indexs = m_wl->get_all_index(&index_length);
     for (int i = 0; i < index_length; i++) {
@@ -1627,8 +1713,12 @@ RC HotThread::run() {
         itemid_t * item;
 	      index->get_index_by_id(j, item);
         row_t * row = ((row_t *)item->location);
-        if (row->conflict_num > 10) {row->is_hot = true;}
-        else if (row->conflict_num < 5) {row->is_hot = false;}
+        if (row->conflict_num >= 350) {row->is_hot = true; row->conflict_num = 0;}
+        else if (row->conflict_num < 350) {row->is_hot = false; row->conflict_num = 0;}
+        // if(row->rcnt_pos > 100000000){  //clear if too big
+        //   row->rcnt_pos = row->rcnt_pos - row->rcnt_neg;
+        //   row->rcnt_neg = 0; 
+        // } 
       }
     }
     mem_allocator.free(indexs,sizeof(INDEX*));

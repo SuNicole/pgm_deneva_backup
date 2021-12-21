@@ -127,7 +127,7 @@ void * Rdma::client_qp(void *arg){
 		#if CC_ALG == RDMA_CALVIN
 			if (thread_id > g_thread_cnt * (COROUTINE_CNT + 1) && thread_id <= (g_total_thread_cnt - 2)* (COROUTINE_CNT + 1)) continue;
 		#else 
-			if (thread_id > g_thread_cnt * (COROUTINE_CNT + 1)) continue;
+			// if (thread_id > g_thread_cnt * (COROUTINE_CNT + 1)) continue;
 		#endif
 	#else
 		for(int thread_id = 0;thread_id < g_total_thread_cnt ; thread_id ++){
@@ -193,13 +193,13 @@ void * Rdma::server_qp(void *){
 	return NULL;
 }
 
-char* Rdma::get_index_client_memory(uint64_t thd_id,int num) { //num>=1
+char* Rdma::get_index_client_memory(uint64_t thd_id, int num) { //num>=1
 	char* temp = (char *)(client_rdma_rm->raw_ptr);
 	temp += sizeof(IndexInfo) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
 	return temp;
 }
 
-char* Rdma::get_row_client_memory(uint64_t thd_id,int num) { //num>=1
+char* Rdma::get_row_client_memory(uint64_t thd_id, int num) { //num>=1
 	//when num>1, get extra row for doorbell batched RDMA requests
 	char* temp = (char *)(client_rdma_rm->raw_ptr);
 	temp +=  sizeof(IndexInfo) * (max_batch_index * g_total_thread_cnt * (COROUTINE_CNT + 1));

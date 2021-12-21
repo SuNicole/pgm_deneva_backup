@@ -75,7 +75,11 @@ InputThread * input_thds;
 OutputThread * output_thds;
 AbortThread * abort_thds;
 LogThread * log_thds;
+
+#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE))
 HotThread * hot_thds;
+#endif
+
 #if CC_ALG == CALVIN || CC_ALG == RDMA_CALVIN
 CalvinLockThread * calvin_lock_thds;
 CalvinSequencerThread * calvin_seq_thds;
@@ -85,6 +89,9 @@ CalvinSequencerThread * calvin_seq_thds;
 void parser(int argc, char * argv[]);
 
 int main(int argc, char *argv[]) {
+	accum_faa_mutex = new pthread_mutex_t;
+	pthread_mutex_init(accum_faa_mutex, NULL);
+
 	RDMA_MEMORY_LATCH = (pthread_mutex_t *)mem_allocator.alloc(sizeof(pthread_mutex_t));
 	pthread_mutex_init(RDMA_MEMORY_LATCH, NULL);
 	RDMA_QP_LATCH = (pthread_mutex_t *)mem_allocator.alloc(sizeof(pthread_mutex_t));
@@ -356,8 +363,9 @@ int main(int argc, char *argv[]) {
 #if CC_ALG == CALVIN || CC_ALG == RDMA_CALVIN
 		all_thd_cnt += 2; // sequencer + scheduler thread
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT
-		all_thd_cnt += 1;
+
+#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE))
+	all_thd_cnt += 1; //hotthread
 #endif
 
 	if (g_ts_alloc == LTS_TCP_CLOCK) {
@@ -388,9 +396,11 @@ int main(int argc, char *argv[]) {
 	calvin_lock_thds = new CalvinLockThread[1];
 	calvin_seq_thds = new CalvinSequencerThread[1];
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT
+
+#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE))
 	hot_thds = new HotThread[1];
 #endif
+
 	// query_queue should be the last one to be initialized!!!
 	// because it collects txn latency
 	//if (WORKLOAD != TEST) {
@@ -508,10 +518,12 @@ int main(int argc, char *argv[]) {
 	worker_num_thds[0].init(id,g_node_id,m_wl);
 	pthread_create(&p_thds[id++], &attr, run_thread, (void *)&worker_num_thds[0]);
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT 
+
+#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE))
 	hot_thds[0].init(id,g_node_id,m_wl);
 	pthread_create(&p_thds[id++], &attr, run_thread, (void *)&hot_thds[0]);
 #endif
+
 	for (uint64_t i = 0; i < all_thd_cnt; i++) pthread_join(p_thds[i], NULL);
 
 	endtime = get_server_clock();

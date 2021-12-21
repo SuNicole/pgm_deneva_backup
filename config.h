@@ -74,10 +74,17 @@
 /***********************************************/
 // Simulation + Hardware
 /***********************************************/
-#define NODE_CNT 2
+#define NODE_CNT 3
 #define THREAD_CNT 24
 #define REM_THREAD_CNT 1
 #define SEND_THREAD_CNT 1
+
+#if ALL_ES_LOCK || ((CC_ALG != RDMA_OPT_NO_WAIT) && (CC_ALG != RDMA_OPT_WAIT_DIE))
+#define HOT_THREAD_CNT 0
+#else
+#define HOT_THREAD_CNT 1
+#endif
+
 #define COROUTINE_CNT 4
 #define CORE_CNT 2
 // PART_CNT should be at least NODE_CNT
@@ -172,17 +179,20 @@
 
 // WAIT_DIE, NO_WAIT, DL_DETECT, TIMESTAMP, MVCC, HSTORE, OCC, VLL, RDMA_SILO, RDMA_NO_WAIT, RDMA_NO_WAIT2, RDMA_WAIT_DIE2,RDMA_TS1,RDMA_SILO,RDMA_MVCC,RDMA_MAAT,RDMA_CICADA
 //RDMA_NO_WAIT2, RDMA_WAIT_DIE2:no matter read or write, mutex lock is used 
+//RDMA_OPT_NO_WAIT, RDMA_OPT_WAIT_DIE
 #define ISOLATION_LEVEL SERIALIZABLE
 
-#define CC_ALG RDMA_OPT_NO_WAIT
+#define CC_ALG RDMA_OPT_WAIT_DIE
 
 #define YCSB_ABORT_MODE false
 #define QUEUE_C  APACITY_NEW 1000000
 
-#define DEBUG_PRINTF  false
+#define DEBUG_PRINTF false
+#define ALL_ES_LOCK false
 
 #if RDMA_ONE_SIDE 
 #define USE_DBPAOR false
+#define BATCH_FAA true
 #define BATCH_INDEX_AND_READ false //keep this "false", a fail test for SILO
 #endif
 
@@ -218,7 +228,7 @@
 #else
   #define CALVIN_THREAD_NUM 0
 #endif
-#define RDMA_MAX_CLIENT_QP (THREAD_CNT + REM_THREAD_CNT + SEND_THREAD_CNT + 1 + LOG_THREAD_NUM + WORK_THREAD_NUM + CALVIN_THREAD_NUM)
+#define RDMA_MAX_CLIENT_QP (THREAD_CNT + REM_THREAD_CNT + SEND_THREAD_CNT + 1 + LOG_THREAD_NUM + WORK_THREAD_NUM + CALVIN_THREAD_NUM + HOT_THREAD_CNT)
 // #define RDMA_SEND_COUNT (RDMA_BUFFER_SIZE / 4096)
 // #define RDMA_COLOR_LOG
 
@@ -276,7 +286,7 @@
 #define RDMA_TXNTABLE_MAX (COROUTINE_CNT + 1) * THREAD_CNT
 // #define ROW_SET_LENGTH 100
 #define MAX_RETRY_TIME 2
-#define LOCK_LENGTH 10
+#define LOCK_LENGTH 4
 
 /***********************************************/
 // Logging
@@ -305,8 +315,8 @@
 #define DATA_PERC 100
 #define ACCESS_PERC 0.03
 #define INIT_PARALLELISM 8
-#define SYNTH_TABLE_SIZE 2097152
-#define ZIPF_THETA 0.8
+#define SYNTH_TABLE_SIZE 3145728
+#define ZIPF_THETA 0.95
 #define TXN_WRITE_PERC 0.2
 #define TUP_WRITE_PERC 0.2
 #define SCAN_PERC           0
@@ -497,6 +507,7 @@ enum PPSTxnType {
 #define RDMA_WAIT_DIE 42
 #define RDMA_WOUND_WAIT 43
 #define RDMA_OPT_NO_WAIT 44
+#define RDMA_OPT_WAIT_DIE 45
 // TIMESTAMP allocation method.
 #define TS_MUTEX          1
 #define TS_CAS            2

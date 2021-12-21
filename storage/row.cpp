@@ -92,10 +92,19 @@ RC row_t::init(table_t *host_table, uint64_t part_id, uint64_t row_id) {
 	_tid_word = 0;
 	lock_owner = 0;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
 	conflict_num = 0;
-	lock_info = 0;
+#if ALL_ES_LOCK
+	is_hot = true;
+#else
 	is_hot = false;
+#endif
+	rcnt_neg = 0;
+	rcnt_pos = 0;
+	lock_info = 0;
+#if CC_ALG == RDMA_OPT_WAIT_DIE
+	for(int i = 0; i < LOCK_LENGTH; i++){ts[i] = 0;}
+#endif
 #endif
 #if CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
     lock_type = 0;
@@ -185,7 +194,7 @@ void row_t::init_manager(row_t * row) {
   manager = (Row_rdma_silo *) mem_allocator.align_alloc(sizeof(Row_rdma_silo));
 #elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
   manager = (Row_rdma_2pl *) mem_allocator.align_alloc(sizeof(Row_rdma_2pl));
-#elif CC_ALG == RDMA_OPT_NO_WAIT
+#elif CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
   manager = (Row_rdma_opt_2pl *) mem_allocator.align_alloc(sizeof(Row_rdma_opt_2pl));
 #elif CC_ALG == RDMA_MVCC
   manager = (Row_rdma_mvcc *) mem_allocator.align_alloc(sizeof(Row_rdma_mvcc));
@@ -362,7 +371,7 @@ RC row_t::remote_copy_row(row_t* remote_row, TxnManager * txn, Access *access) {
   return rc;
 }
 
-RC row_t::get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *access,uint64_t cor_id) {
+RC row_t::get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *access,uint64_t cor_id, uint64_t req_key) {
   RC rc = RCOK;
 #if MODE==NOCC_MODE || MODE==QRY_ONLY_MODE
 	access->data = this;
@@ -530,9 +539,9 @@ RC row_t::get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *ac
 	goto end;
 
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
 	lock_t lock_type = LOCK_NONE;
-	rc = this->manager->lock_get(yield, type, txn, this, cor_id, &lock_type);
+	rc = this->manager->lock_get(yield, type, txn, this, cor_id, &lock_type,req_key);
 	// if (rc == RCOK) {
 	// 	access->data = txn->cur_row;
 	// }
@@ -855,14 +864,17 @@ uint64_t row_t::return_row(RC rc, access_t type, TxnManager *txn, row_t *row) {
 	}
 	this->manager->lock_release(txn);
 	return 0;
-#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
+#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
 	assert (row == NULL || row == this || type == XP);
 	if (ROLL_BACK && type == XP) {  // recover from previous writes.
 		this->copy(row);  //for abort of local txn ABORT, copy orig_data to orig_row. remote ABORT dont need this operate
 	}
 	return 0;
-#elif CC_ALG == RDMA_OPT_NO_WAIT
-	return 0;
+// #elif CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+// 	if (ROLL_BACK && type == XP) {  // recover from previous writes.
+// 		this->copy(row);  //for abort of local txn ABORT, copy orig_data to orig_row. remote ABORT dont need this operate
+// 	}
+// 	return 0;
 #elif CC_ALG == TIMESTAMP || CC_ALG == MVCC || CC_ALG == SSI || CC_ALG == WSI
 	// for RD or SCAN or XP, the row should be deleted.
 	// because all WR should be companied by a RD

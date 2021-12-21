@@ -587,9 +587,9 @@ RC TxnManager::abort(yield_func_t &yield, uint64_t cor_id) {
 	aborted = true;
 	//RDMA_SILO - ADD remote release lock by rdma
 	release_locks(yield, Abort, cor_id);
-#if DEBUG_PRINTF
-	printf("---thd %lu txn %lu，release_lock(Abort) end.\n",get_thd_id(), get_txn_id());
-#endif
+// #if DEBUG_PRINTF
+// 	printf("---thd %lu txn %lu，release_lock(Abort) end.\n",get_thd_id(), get_txn_id());
+// #endif
 #if CC_ALG == MAAT
 	//assert(time_table.get_state(get_txn_id()) == MAAT_ABORTED);
 	time_table.release(get_thd_id(),get_txn_id());
@@ -647,7 +647,7 @@ RC TxnManager::start_abort(yield_func_t &yield, uint64_t cor_id) {
 	INC_STATS(get_thd_id(), trans_prepare_time, prepare_timespan);
     INC_STATS(get_thd_id(), trans_prepare_count, 1);
 	//RDMA_SILO:keep message or not
-	if(query->partitions_touched.size() > 1 && CC_ALG != RDMA_SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2  && CC_ALG != RDMA_MAAT && CC_ALG != RDMA_CICADA && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT) {
+	if(query->partitions_touched.size() > 1 && CC_ALG != RDMA_SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2  && CC_ALG != RDMA_MAAT && CC_ALG != RDMA_CICADA && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_OPT_NO_WAIT &&  CC_ALG != RDMA_OPT_WAIT_DIE) {
 		send_finish_messages();
 		abort(yield, cor_id);
 		return Abort;
@@ -691,7 +691,7 @@ RC TxnManager::start_commit(yield_func_t &yield, uint64_t cor_id) {
 			rdma_txn_table.local_set_state(get_thd_id(),txn->txn_id, WOUND_COMMITTING);
 		}
 #endif
-	if(is_multi_part() && CC_ALG != RDMA_SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_MAAT  && CC_ALG != RDMA_CICADA && CC_ALG !=RDMA_TS1 && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT) {
+	if(is_multi_part() && CC_ALG != RDMA_SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_MAAT  && CC_ALG != RDMA_CICADA && CC_ALG !=RDMA_TS1 && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT && CC_ALG!= RDMA_OPT_NO_WAIT && CC_ALG!=RDMA_OPT_WAIT_DIE) {
 		if(CC_ALG == TICTOC) {
 			rc = validate(yield, cor_id);
 			if (rc != Abort) {
@@ -882,7 +882,7 @@ void TxnManager::set_query(BaseQuery *qry) { query = qry; }
 
 void TxnManager::set_timestamp(ts_t timestamp) { txn->timestamp = timestamp; }
 
-ts_t TxnManager::get_timestamp() { return txn->timestamp; }
+ts_t TxnManager::get_timestamp() { assert(txn->timestamp!=1);return txn->timestamp; }
 
 void TxnManager::set_start_timestamp(uint64_t start_timestamp) {
 	txn->start_timestamp = start_timestamp;
@@ -960,11 +960,11 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
   #endif
     }
   }
-#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
+#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
 	if(txn->accesses[rid]->location == g_node_id) is_local=true;
 	else is_local=false;
 
-	//no wait abort write
+	//recover local abort write
   	if (ROLL_BACK && type == XP && is_local){
        orig_r->return_row(rc,type, this, txn->accesses[rid]->orig_data); 
 	} else {
@@ -1010,8 +1010,8 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
 	version = orig_r->manager->commit(this, type);
 #else
   if (ROLL_BACK && type == XP &&
-      (CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WAIT_DIE || CC_ALG == HSTORE ||
-      CC_ALG == HSTORE_SPEC || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT)) {
+      (CC_ALG == DL_DETECT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE ||
+      CC_ALG == HSTORE_SPEC || CC_ALG == WOUND_WAIT)) {
     orig_r->return_row(rc,type, this, txn->accesses[rid]->orig_data); 
   } else {
 #if ISOLATION_LEVEL == READ_COMMITTED
@@ -1026,7 +1026,7 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
 #endif
 
 #if ROLL_BACK && \
-		(CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT)
+		(CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE)
 	if (type == WR && is_local) {
 		//printf("free 10 %ld\n",get_txn_id());
 		txn->accesses[rid]->orig_data->free_row();
@@ -1046,7 +1046,7 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
 		glob_manager.set_max_cts(_min_commit_ts);
 #endif
 
-#if CC_ALG != SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT
+#if CC_ALG != SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE
   txn->accesses[rid]->data = NULL;
 #endif
 }
@@ -1089,9 +1089,6 @@ void TxnManager::cleanup(yield_func_t &yield, RC rc, uint64_t cor_id) {
 #if CC_ALG == RDMA_TS1
     rdmats_man.finish(rc,this);
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT
-    o2pl_man.finish(yield, rc, this, cor_id);
-#endif
 	ts_t starttime = get_sys_clock();
 	uint64_t row_cnt = txn->accesses.get_count();
 	assert(txn->accesses.get_count() == txn->row_cnt);
@@ -1102,7 +1099,8 @@ void TxnManager::cleanup(yield_func_t &yield, RC rc, uint64_t cor_id) {
 
 	vector<vector<uint64_t>> remote_access(g_node_cnt); //for DBPA, collect remote abort write
 	for (int rid = row_cnt - 1; rid >= 0; rid --) {
-		cleanup_row(yield, rc,rid,remote_access,cor_id);  //return abort write row
+		assert(txn->accesses[rid]->data!=NULL);
+		cleanup_row(yield, rc,rid,remote_access,cor_id);  //return abort write row		
 	}
 #if USE_DBPAOR == true && CC_ALG == RDMA_TS1 
 	starttime = get_sys_clock();
@@ -1130,7 +1128,7 @@ void TxnManager::cleanup(yield_func_t &yield, RC rc, uint64_t cor_id) {
 				INC_STATS(get_thd_id(), worker_yield_cnt, 1);
 				INC_STATS(get_thd_id(), worker_yield_time, yield_endtime - h_thd->last_yield_time);
 				INC_STATS(get_thd_id(), worker_idle_time, yield_endtime - h_thd->last_yield_time);
-				dbres1 = rc_qp[i][get_thd_id() + cor_id * g_thread_cnt]->poll_send_comp();
+				dbres1 = rc_qp[i][get_thd_id() + cor_id * g_total_thread_cnt]->poll_send_comp();
 				waitcomp_time = get_sys_clock();
 				
 				INC_STATS(get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);
@@ -1139,7 +1137,7 @@ void TxnManager::cleanup(yield_func_t &yield, RC rc, uint64_t cor_id) {
 			h_thd->cor_process_starttime[cor_id] = get_sys_clock();
 			// RDMA_ASSERT(res_p == rdmaio::IOCode::Ok);
 #else
-            auto dbres1 = rc_qp[i][get_thd_id() + cor_id * g_thread_cnt]->wait_one_comp();
+            auto dbres1 = rc_qp[i][get_thd_id() + cor_id * g_total_thread_cnt]->wait_one_comp();
             RDMA_ASSERT(dbres1 == IOCode::Ok);
 			endtime = get_sys_clock();
 			INC_STATS(get_thd_id(), worker_waitcomp_time, endtime-starttime);
@@ -1151,6 +1149,9 @@ void TxnManager::cleanup(yield_func_t &yield, RC rc, uint64_t cor_id) {
 #endif 
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
     r2pl_man.finish(yield,rc,this,cor_id);
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+    o2pl_man.finish(yield, rc, this, cor_id);
 #endif
 #if CC_ALG == DLI_BASE || CC_ALG == DLI_OCC || CC_ALG == DLI_MVCC_OCC || CC_ALG == DLI_DTA || CC_ALG == DLI_DTA2 || CC_ALG == DLI_DTA3 || \
 		CC_ALG == DLI_MVCC_BASE
@@ -1187,7 +1188,7 @@ RC TxnManager::get_lock(row_t * row, access_t type) {
 	return rc;
 }
 
-RC TxnManager::get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& row_rtn,uint64_t cor_id) {
+RC TxnManager::get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& row_rtn,uint64_t cor_id, uint64_t req_key) {
 	uint64_t starttime = get_sys_clock();
 	uint64_t timespan;
 	RC rc = RCOK;
@@ -1260,7 +1261,7 @@ RC TxnManager::get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& 
 	else 
 		rc = row->get_row(yield,type, this, access,cor_id);
 #else
-	rc = row->get_row(yield, type, this, access, cor_id);
+	rc = row->get_row(yield, type, this, access, cor_id, req_key);
 #endif
 	INC_STATS(get_thd_id(), trans_get_row_time, get_sys_clock() - get_access_end_time);
 	INC_STATS(get_thd_id(), trans_get_row_count, 1);
@@ -1289,7 +1290,7 @@ RC TxnManager::get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& 
 #if CC_ALG == SILO
 	access->tid = last_tid;
 #endif
-#if CC_ALG ==RDMA_NO_WAIT || CC_ALG ==RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG ==RDMA_NO_WAIT || CC_ALG ==RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
 	access->location = g_node_id;
 	access->offset = (char*)row - rdma_global_buffer;
 #endif
@@ -1314,7 +1315,7 @@ RC TxnManager::get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& 
 	
 #endif
 
-#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT)
+#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE)
 	if (type == WR) {
 	//printf("alloc 10 %ld\n",get_txn_id());
 	uint64_t part_id = row->get_part_id();
@@ -1387,7 +1388,7 @@ RC TxnManager::get_row_post_wait(row_t *& row_rtn) {
 
 	access->type = type;
 	access->orig_row = row;
-#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT)
+#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE)
 	if (type == WR) {
 		uint64_t part_id = row->get_part_id();
 	//printf("alloc 10 %ld\n",get_txn_id());
@@ -1465,7 +1466,7 @@ RC TxnManager::validate(yield_func_t &yield, uint64_t cor_id) {
 			CC_ALG != DLI_DTA2 && CC_ALG != DLI_DTA3 && CC_ALG != DLI_MVCC && CC_ALG != SILO &&
 			CC_ALG != RDMA_SILO && CC_ALG != RDMA_MVCC && CC_ALG != RDMA_MAAT && 
 			CC_ALG != RDMA_CICADA && CC_ALG != CICADA) {
-		return RCOK; //no validate in NO_WAIT
+		return RCOK; //no validate in 2PL
 	}
 	RC rc = RCOK;
 	uint64_t starttime = get_sys_clock();
@@ -1614,7 +1615,7 @@ void TxnManager::release_locks(yield_func_t &yield, RC rc, uint64_t cor_id) {
 }
 #if USE_DBPAOR == true
 row_t * TxnManager::cas_and_read_remote(yield_func_t &yield, uint64_t& try_lock, uint64_t target_server, uint64_t cas_offset, uint64_t read_offset, uint64_t compare, uint64_t swap, uint64_t cor_id){
-	uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+	uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
 	uint64_t *local_buf1 = (uint64_t *)Rdma::get_row_client_memory(thd_id);
 	char *local_buf2 = Rdma::get_row_client_memory(thd_id,2);
 	uint64_t read_size = row_t::get_row_size(ROW_DEFAULT_SIZE);
@@ -1645,7 +1646,7 @@ row_t * TxnManager::cas_and_read_remote(yield_func_t &yield, uint64_t& try_lock,
 		INC_STATS(get_thd_id(), worker_yield_cnt, 1);
 		INC_STATS(get_thd_id(), worker_yield_time, yield_endtime - h_thd->last_yield_time);
 		INC_STATS(get_thd_id(), worker_idle_time, yield_endtime - h_thd->last_yield_time);
-		dbres1 = rc_qp[target_server][get_thd_id() + cor_id * g_thread_cnt]->poll_send_comp();
+		dbres1 = rc_qp[target_server][get_thd_id() + cor_id * g_total_thread_cnt]->poll_send_comp();
 		waitcomp_time = get_sys_clock();
 		
 		INC_STATS(get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);
@@ -1677,7 +1678,7 @@ void TxnManager::batch_unlock_remote(yield_func_t &yield, uint64_t cor_id, int l
 		}
 	}
     DBrequests dbreq(remote_access_noorder.size());   
-    uint64_t thd_id = txnMng->get_thd_id()  + cor_id * g_thread_cnt;
+    uint64_t thd_id = txnMng->get_thd_id()  + cor_id * g_total_thread_cnt;
     dbreq.init(); 
     vector<uint64_t> remote_need_cas,remote_access;
     for(int i=0;i<remote_access_noorder.size();i++){
@@ -1817,7 +1818,7 @@ void TxnManager::batch_unlock_remote(yield_func_t &yield, uint64_t cor_id, int l
 	 
 	 DBrequests dbreq(remote_index.size());
 	 dbreq.init();
-	 uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+	 uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
 	 YCSBQuery* ycsb_query = (YCSBQuery*) query;
 	 for(int i=0;i<remote_index.size();i++){
 		 if(rtype == R_INDEX){
@@ -1877,7 +1878,7 @@ void TxnManager::batch_unlock_remote(yield_func_t &yield, uint64_t cor_id, int l
 	 }
 	 uint64_t starttime = get_sys_clock(), endtime;
 	 vector<uint64_t> remote_index = remote_index_origin[loc];
-	 uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+	 uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
 	 YCSBQuery* ycsb_query = (YCSBQuery*) query;
      //to do: add coroutine
 	 INC_STATS(get_thd_id(), worker_oneside_cnt, 1);
@@ -1895,7 +1896,7 @@ void TxnManager::batch_unlock_remote(yield_func_t &yield, uint64_t cor_id, int l
 		INC_STATS(get_thd_id(), worker_yield_cnt, 1);
 		INC_STATS(get_thd_id(), worker_yield_time, yield_endtime - h_thd->last_yield_time);
 		INC_STATS(get_thd_id(), worker_idle_time, yield_endtime - h_thd->last_yield_time);
-		dbres1 = rc_qp[loc][get_thd_id() + cor_id * g_thread_cnt]->poll_send_comp();
+		dbres1 = rc_qp[loc][get_thd_id() + cor_id * g_total_thread_cnt]->poll_send_comp();
 		waitcomp_time = get_sys_clock();
 		
 		INC_STATS(get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);
@@ -1941,7 +1942,7 @@ void TxnManager::batch_unlock_remote(yield_func_t &yield, uint64_t cor_id, int l
 
 row_t * TxnManager::read_remote_row(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset, uint64_t cor_id){
     uint64_t operate_size = row_t::get_row_size(ROW_DEFAULT_SIZE);
-    uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
     char *local_buf = Rdma::get_row_client_memory(thd_id);
    
     uint64_t starttime;
@@ -2004,7 +2005,7 @@ row_t * TxnManager::read_remote_row(yield_func_t &yield, uint64_t target_server,
 
  itemid_t * TxnManager::read_remote_index(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t key, uint64_t cor_id){
     uint64_t operate_size = sizeof(IndexInfo);
-    uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
 	// printf("%ld:%ld:%ld  = thd_id:%ld\n", get_thd_id(), cor_id, g_thread_cnt, thd_id);
     char *test_buf = Rdma::get_index_client_memory(thd_id);
     memset(test_buf, 0, operate_size);
@@ -2066,7 +2067,7 @@ row_t * TxnManager::read_remote_row(yield_func_t &yield, uint64_t target_server,
 }
 
  bool TxnManager::write_remote_row(yield_func_t &yield, uint64_t target_server,uint64_t operate_size,uint64_t remote_offset,char *write_content, uint64_t cor_id){
-    uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
     char *local_buf = Rdma::get_row_client_memory(thd_id);
     memcpy(local_buf, write_content , operate_size);
 
@@ -2122,7 +2123,7 @@ row_t * TxnManager::read_remote_row(yield_func_t &yield, uint64_t target_server,
 }
 
 bool TxnManager::write_remote_index(yield_func_t &yield,uint64_t target_server,uint64_t operate_size,uint64_t remote_offset,char *write_content,uint64_t cor_id){
-    uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
 
     char *local_buf = Rdma::get_index_client_memory(thd_id);
     ::memset(local_buf, 0, operate_size);
@@ -2183,7 +2184,7 @@ bool TxnManager::write_remote_index(yield_func_t &yield,uint64_t target_server,u
 uint64_t TxnManager::cas_remote_content(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t old_value,uint64_t new_value, uint64_t cor_id){
     
     rdmaio::qp::Op<> op;
-    uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
     uint64_t *local_buf = (uint64_t *)Rdma::get_row_client_memory(thd_id);
     auto mr = client_rm_handler->get_reg_attr().value();
     
@@ -2232,11 +2233,33 @@ uint64_t TxnManager::cas_remote_content(yield_func_t &yield, uint64_t target_ser
     return *local_buf;
 }
 
+#if BATCH_FAA
+uint64_t TxnManager::local_record_faa(uint64_t req_key,uint64_t loc,uint64_t pointer){
+	pthread_mutex_lock( accum_faa_mutex );
+	auto got = accum_faa.find(req_key);
+	if(got == accum_faa.end()){  //no such key in map
+		faa_info new_info;
+		new_info.accum_num = 1;
+		new_info.loc = loc;
+		new_info.pointer = pointer;
+		std::pair<uint64_t, faa_info> newpair (req_key, new_info);		
+		auto ret = accum_faa.insert(newpair);
+		assert(ret.second != false);
+		// if(ret.second==false){ //insert fail, key already exist
+		// 	ret.first->second.accum_num++;
+		// }
+	}
+	else{ //key already exist
+		got->second.accum_num++;
+	}
+	pthread_mutex_unlock( accum_faa_mutex );
+}
+#endif
 
 uint64_t TxnManager::faa_remote_content(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset, uint64_t cor_id){
     
     rdmaio::qp::Op<> op;
-    uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
     uint64_t *local_buf = (uint64_t *)Rdma::get_row_client_memory(thd_id);
     auto mr = client_rm_handler->get_reg_attr().value();
     
@@ -2363,7 +2386,7 @@ RdmaTxnTableNode * TxnManager::read_remote_timetable(uint64_t target_server,uint
 RdmaTxnTableNode * TxnManager::read_remote_timetable(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t cor_id){
 	uint64_t operate_size = sizeof(RdmaTxnTableNode);
 
-    uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
     char *local_buf = Rdma::get_row_client_memory(thd_id);
 
 	uint64_t starttime;
@@ -2422,7 +2445,7 @@ RdmaTxnTableNode * TxnManager::read_remote_timetable(yield_func_t &yield, uint64
 char * TxnManager::read_remote_txntable(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t cor_id){
 	uint64_t operate_size = sizeof(RdmaTxnTableNode);
 
-    uint64_t thd_id = get_thd_id() + cor_id * g_thread_cnt;
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
     char *local_buf = Rdma::get_row_client_memory(thd_id);
 
 	uint64_t starttime;
@@ -2694,7 +2717,7 @@ RC TxnManager::preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_ro
 	access->location = loc;
 	access->offset = m_item->offset;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
   	access->orig_row = test_row;
 	access->location = loc;
 	access->offset = m_item->offset;
@@ -2714,8 +2737,8 @@ RC TxnManager::preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_ro
     mem_allocator.free(m_item,0);
 
     if (type == WR) ++txn->write_cnt;//this->last_type = WR
-    txn->accesses.add(access);
-
+	txn->accesses.add(access);
+	
     return rc;
 }
 

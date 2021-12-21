@@ -8,92 +8,139 @@
 #include "rdma_opt_2pl.h"
 #include "row_rdma_opt_2pl.h"
 
-#if CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG == RDMA_OPT_NO_WAIT ||  CC_ALG == RDMA_OPT_WAIT_DIE
 void RDMA_opt_2pl::write_and_unlock(yield_func_t &yield, RC rc, row_t * row, row_t * data, TxnManager * txnMng,uint64_t cor_id) {
 	if (rc != Abort) row->copy(data);
     uint64_t lock_info = row->lock_info;
     row->lock_info = 0;
-
+#if DEBUG_PRINTF
+		printf("---thread id: %lu, local unlock write suc, lock location: %lu; %p, txn id: %lu\n", txnMng->get_thd_id(), g_node_id, &row, txnMng->get_txn_id());
+#endif
 }
 
 void RDMA_opt_2pl::remote_write_and_unlock(yield_func_t &yield,RC rc, TxnManager * txnMng , uint64_t num,uint64_t cor_id){
-
     Access *access = txnMng->txn->accesses[num];
     uint64_t off = access->offset;
     uint64_t loc = access->location;
     uint64_t thd_id = txnMng->get_thd_id();
 
-    uint64_t lock_info_pointer = row_t::get_lock_info_pointer(access->offset);
-    uint64_t new_lock_info = txnMng->get_txn_id() + 1;
+    uint64_t remote_lock_info_pointer = row_t::get_lock_info_pointer(access->offset);
     row_t *data = access->data;
     data->lock_info = 0; //write data and unlock
 
     uint64_t operate_size = 0;
-    char * write_pointer = row_t::get_write_pointer((char*)data);
-    if(rc != Abort) operate_size = row_t::get_row_write_size(data->tuple_size);
+    uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)data);    
+    if(rc != Abort) operate_size = row_t::get_row_size(data->tuple_size) - sizeof(data->conflict_num) - sizeof(data->is_hot) - sizeof(data->rcnt_neg) - sizeof(data->rcnt_pos);
     else operate_size = sizeof(uint64_t);
 
-    assert(txnMng->write_remote_row(yield,loc,operate_size,lock_info_pointer,write_pointer,cor_id) == true);
+    assert(txnMng->write_remote_row(yield,loc,operate_size,remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id) == true);
+
+#if DEBUG_PRINTF
+		printf("---thread id: %lu, remote unlock write suc, lock location: %lu; %p, txn id: %lu\n", txnMng->get_thd_id(), loc, remote_mr_attr[loc].buf+access->offset, txnMng->get_txn_id());
+#endif
 }
 
 void RDMA_opt_2pl::unlock(yield_func_t &yield, RC rc, row_t * row , TxnManager * txnMng, lock_t lock_type, uint64_t cor_id){
-
     uint64_t try_lock = -1;
     uint64_t loc = g_node_id;
-    uint64_t lock_info_pointer = row_t::get_lock_info_pointer(row);
-    uint64_t conflict_pointer = (char*)row - rdma_global_buffer;
+    uint64_t lock_info_pointer = row_t::get_lock_info_pointer((char*)row - rdma_global_buffer);
     uint64_t new_lock_info = txnMng->get_txn_id() + 1;
-
+    uint64_t tts = txnMng->get_timestamp();
+    uint64_t rcnt_neg_pointer = row_t::get_rcnt_neg_pointer((char*)row - rdma_global_buffer);    
+#if CC_ALG == RDMA_OPT_NO_WAIT
     if (lock_type == DLOCK_EX) {
-        try_lock = txnMng->cas_remote_content(yield,loc,lock_info_pointer,new_lock_info,0,cor_id);
-        // printf("txn %ld release ex lock now it is %ld\n", new_lock_info, row->lock_info);
-        assert(try_lock == new_lock_info);
-        // assert(row->lock_info == 0);
-    } else if (lock_type == DLOCK_SH){
-        txnMng->loop_cas_remote(yield, loc, lock_info_pointer, 0, new_lock_info, cor_id);
-        row->read_cnt --;
         row->lock_info = 0;
+        // try_lock = txnMng->cas_remote_content(yield,loc,lock_info_pointer,new_lock_info,0,cor_id);
+        // assert(try_lock == new_lock_info);
+    } else if (lock_type == DLOCK_SH){
+        txnMng->faa_remote_content(yield, loc, rcnt_neg_pointer, cor_id);
+        // txnMng->loop_cas_remote(yield, loc, lock_info_pointer, 0, new_lock_info, cor_id);
+        // row->read_cnt --;
+        // row->lock_info = 0;
     }
+#endif 
+#if CC_ALG == RDMA_OPT_WAIT_DIE
+    if (lock_type == DLOCK_EX) { //WRITE(lock_info=0, ts_array)
+        int i;
+        for(i=0;i<LOCK_LENGTH;i++){
+            if(row->ts[i] == tts){
+                row->ts[i] = 0;
+                break;
+            }
+        }
+        if(i == LOCK_LENGTH) assert(false); 
+        row->lock_info = 0;
+    } else if (lock_type == DLOCK_SH){ //Write(ts_array) FAA(rcnt_neg)
+        int i;
+        for(i=0;i<LOCK_LENGTH;i++){
+            if(row->ts[i] == tts){
+                row->ts[i] = 0;
+                break;
+            }
+        }
+        if(i == LOCK_LENGTH) assert(false);     
+        txnMng->faa_remote_content(yield, loc, rcnt_neg_pointer, cor_id);
+    }
+#if DEBUG_PRINTF
+		printf("---thread id: %lu, local unlock read suc, lock location: %lu; %p, txn id: %lu\n", txnMng->get_thd_id(), loc, &row, txnMng->get_txn_id());
+#endif
+#endif
 }
 
 void RDMA_opt_2pl::remote_unlock(yield_func_t &yield, RC rc, TxnManager * txnMng, uint64_t num, uint64_t cor_id){
-
     Access *access = txnMng->txn->accesses[num];
+    row_t *data = access->data;
     lock_t lock_type = access->lock_type;
     uint64_t off = access->offset;
     uint64_t loc = access->location;
-    uint64_t lock_info_pointer = row_t::get_lock_info_pointer(access->offset);
+    uint64_t remote_lock_info_pointer = row_t::get_lock_info_pointer(access->offset);
+    uint64_t remote_rcnt_neg_pointer = row_t::get_rcnt_neg_pointer(access->offset);
+    uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)data);    
     uint64_t new_lock_info = txnMng->get_txn_id() + 1;
     uint64_t try_lock = -1;
+    uint64_t tts = txnMng->get_timestamp();
+#if CC_ALG == RDMA_OPT_NO_WAIT
     if (lock_type == DLOCK_EX) {
-        try_lock = txnMng->cas_remote_content(yield,loc,lock_info_pointer,new_lock_info,0,cor_id);
-#if DEBUG_PRINTF
-        row_t * test_row = txnMng->read_remote_row(yield,loc,off,cor_id);
-        assert(try_lock == new_lock_info);
-        assert(test_row->lock_info == 0);
-        mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-#endif
+        uint64_t* new_lock = (uint64_t *)mem_allocator.alloc(sizeof(uint64_t));
+        *new_lock= 0;
+        assert(txnMng->write_remote_row(yield,loc,sizeof(uint64_t),remote_lock_info_pointer,(char*)new_lock,cor_id)==true);
+        mem_allocator.free(new_lock, sizeof(uint64_t));
     } else if (lock_type == DLOCK_SH){
-        txnMng->loop_cas_remote(yield, loc, lock_info_pointer, 0, new_lock_info, cor_id);
-        row_t * test_row = txnMng->read_remote_row(yield,loc,off,cor_id);
-
-        test_row->read_cnt --;
-        test_row->lock_info = 0;
-        uint64_t operate_size = 0;
-        char * write_pointer = row_t::get_write_pointer((char*)test_row);
-        // operate_size = row_t::get_row_write_size(test_row->tuple_size);
-        operate_size = sizeof(uint64_t) * 2;
-        assert(txnMng->write_remote_row(yield, loc, operate_size, lock_info_pointer, write_pointer, cor_id) == true);
-        mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-#if DEBUG_PRINTF
-        test_row = txnMng->read_remote_row(yield,loc,off,cor_id);
-        assert(try_lock == new_lock_info);
-        assert(test_row->lock_info == 0);
-        mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-#endif
+        txnMng->faa_remote_content(yield, loc, remote_rcnt_neg_pointer,cor_id);    
     }
+#endif
+#if CC_ALG == RDMA_OPT_WAIT_DIE
+    if (lock_type == DLOCK_EX) { //WRITE(lock_info=0, ts_array)
+        int i;
+        for(i=0;i<LOCK_LENGTH;i++){
+            if(data->ts[i] == tts){
+                data->ts[i] = 0;
+                break;
+            }
+        }
+        if(i == LOCK_LENGTH) assert(false); 
+        data->lock_info = 0;
+        uint64_t operate_size = sizeof(data->lock_info) + sizeof(data->ts[0])*LOCK_LENGTH;
+        assert(txnMng->write_remote_row(yield,loc,operate_size,remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id)==true);
+    } else if (lock_type == DLOCK_SH){ //Write(ts_array) FAA(rcnt_neg)
+        int i;
+        for(i=0;i<LOCK_LENGTH;i++){
+            if(data->ts[i] == tts){
+                data->ts[i] = 0;
+                break;
+            }
+        }
+        if(i == LOCK_LENGTH) assert(false); 
+        uint64_t remote_ts_pointer = row_t::get_ts_pointer(access->offset,i);
+        uint64_t local_ts_pointer = row_t::get_ts_pointer((uint64_t)data,i);
+        assert(txnMng->write_remote_row(yield,loc,sizeof(data->ts[i]),remote_ts_pointer,(char*)local_ts_pointer,cor_id)==true);
+        txnMng->faa_remote_content(yield, loc, remote_rcnt_neg_pointer,cor_id);    
+    }
+#if DEBUG_PRINTF
+		printf("---thread id: %lu, remote unlock read suc, lock location: %lu; %p, txn id: %lu\n", txnMng->get_thd_id(), loc, remote_mr_attr[loc].buf+access->offset, txnMng->get_txn_id());
+#endif
+#endif
 }
-
 
 //write back and unlock
 void RDMA_opt_2pl::finish(yield_func_t &yield, RC rc, TxnManager * txnMng, uint64_t cor_id){

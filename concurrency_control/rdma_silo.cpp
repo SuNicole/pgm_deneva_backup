@@ -255,7 +255,7 @@ bool RDMA_silo::remote_commit_write(yield_func_t &yield, TxnManager * txnMng , u
 
     uint64_t off = txn->accesses[num]->offset + sizeof(data->_tid_word);
     uint64_t loc = txn->accesses[num]->location;
-	uint64_t thd_id = txnMng->get_thd_id() + cor_id * g_thread_cnt;
+	uint64_t thd_id = txnMng->get_thd_id() + cor_id * g_total_thread_cnt;
 	uint64_t lock = txnMng->get_txn_id();
 	data->_tid_word = lock;
 	data->timestamp = time;
@@ -343,7 +343,7 @@ RDMA_silo::finish(yield_func_t &yield, RC rc , TxnManager * txnMng, uint64_t cor
 				INC_STATS(txnMng->get_thd_id(), worker_yield_cnt, 1);
 				INC_STATS(txnMng->get_thd_id(), worker_yield_time, yield_endtime - txnMng->h_thd->last_yield_time);
 				INC_STATS(txnMng->get_thd_id(), worker_idle_time, yield_endtime - txnMng->h_thd->last_yield_time);
-				dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_thread_cnt]->poll_send_comp();
+				dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_total_thread_cnt]->poll_send_comp();
 				waitcomp_time = get_sys_clock();
 				
 				INC_STATS(txnMng->get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);
@@ -352,7 +352,7 @@ RDMA_silo::finish(yield_func_t &yield, RC rc , TxnManager * txnMng, uint64_t cor
 			txnMng->h_thd->cor_process_starttime[cor_id] = get_sys_clock();
 			// RDMA_ASSERT(res_p == rdmaio::IOCode::Ok);
 #else
-            auto dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_thread_cnt]->wait_one_comp();
+            auto dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_total_thread_cnt]->wait_one_comp();
             RDMA_ASSERT(dbres1 == IOCode::Ok);
 			endtime = get_sys_clock();
 			INC_STATS(txnMng->get_thd_id(), worker_waitcomp_time, endtime-starttime);
@@ -414,7 +414,7 @@ RDMA_silo::finish(yield_func_t &yield, RC rc , TxnManager * txnMng, uint64_t cor
 				INC_STATS(txnMng->get_thd_id(), worker_yield_cnt, 1);
 				INC_STATS(txnMng->get_thd_id(), worker_yield_time, yield_endtime - txnMng->h_thd->last_yield_time);
 				INC_STATS(txnMng->get_thd_id(), worker_idle_time, yield_endtime - txnMng->h_thd->last_yield_time);
-				dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_thread_cnt]->poll_send_comp();
+				dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_total_thread_cnt]->poll_send_comp();
 				waitcomp_time = get_sys_clock();
 				
 				INC_STATS(txnMng->get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);
@@ -423,7 +423,7 @@ RDMA_silo::finish(yield_func_t &yield, RC rc , TxnManager * txnMng, uint64_t cor
 			txnMng->h_thd->cor_process_starttime[cor_id] = get_sys_clock();
 			// RDMA_ASSERT(res_p == rdmaio::IOCode::Ok);
 #else
-            auto dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_thread_cnt]->wait_one_comp();
+            auto dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_total_thread_cnt]->wait_one_comp();
             RDMA_ASSERT(dbres1 == IOCode::Ok); 
 			endtime = get_sys_clock();
 			INC_STATS(txnMng->get_thd_id(), worker_waitcomp_time, endtime-starttime);

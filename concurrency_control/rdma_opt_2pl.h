@@ -1,5 +1,5 @@
 
-#if CC_ALG == RDMA_OPT_NO_WAIT
+#if CC_ALG == RDMA_OPT_NO_WAIT ||  CC_ALG == RDMA_OPT_WAIT_DIE
 
 class RDMA_opt_2pl{
 public:
@@ -15,8 +15,6 @@ private:
     void remote_write_and_unlock(yield_func_t &yield, RC rc, TxnManager * txnMng , uint64_t num, uint64_t cor_id);
     void unlock(yield_func_t &yield, RC rc, row_t * row , TxnManager * txnMng, lock_t lock_type, uint64_t cor_id);
     void remote_unlock(yield_func_t &yield, RC rc, TxnManager * txnMng , uint64_t num, uint64_t cor_id);
-    
-
 };
 
 #endif

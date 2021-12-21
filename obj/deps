@@ -2894,7 +2894,7 @@ obj/worker_thread.o: system/worker_thread.cpp system/worker_thread.h \
  storage/index_hash.h storage/index_base.h storage/index_btree.h \
  storage/index_rdma.h storage/index_hash.h benchmarks/ycsb.h system/wl.h \
  system/txn.h benchmarks/tpcc.h benchmarks/da.h benchmarks/creator.h \
- benchmarks/generic.h benchmarks/pps.h
+ benchmarks/generic.h benchmarks/pps.h transport/rdma.h rlibv2/qps/op.hh
 obj/stats.o: statistics/stats.cpp statistics/stats.h \
  statistics/../system/global.h config.h statistics/stats.h \
  statistics/../system/pool.h statistics/../system/global.h \

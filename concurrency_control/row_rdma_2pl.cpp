@@ -217,7 +217,6 @@ local_retry_lock:
 local_retry_lock:
         uint64_t loc = g_node_id;
         uint64_t try_lock = -1;
-        
 
         uint64_t thd_id = txn->get_thd_id();
 		uint64_t *tmp_buf2 = (uint64_t *)Rdma::get_row_client_memory(thd_id);
@@ -229,7 +228,7 @@ local_retry_lock:
             rc = RCOK;
         }
 		if(try_lock != 0){ //如果CAS失败
-			if(tts <= *tmp_buf2){  //wait
+			if(tts < *tmp_buf2 && !simulation->is_done()){  //wait
 #if DEBUG_PRINTF
             printf("---local_retry_lock\n");
 #endif 
