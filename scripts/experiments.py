@@ -226,7 +226,8 @@ def ycsb_skew():
 
     #skew = [0.0,0.4,0.6,0.8,0.9]
     #skew = [0.2,0.6,0.85,0.95]
-    skew = [0,0.2,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95]
+    # skew = [0,0.2,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95]
+    skew = [0.9]
     # skew = [0.85]
     # skew = [0.25,0.55,0.65,0.75]
 
@@ -947,7 +948,7 @@ configs = {
     "PRIORITY":"PRIORITY_ACTIVE",
     "TWOPL_LITE":"false",
 #YCSB
-    "INIT_PARALLELISM" : 8,
+    "INIT_PARALLELISM" : 1,
     "TUP_WRITE_PERC":0.2,
     "ZIPF_THETA":0.3,
     "ACCESS_PERC":0.03,

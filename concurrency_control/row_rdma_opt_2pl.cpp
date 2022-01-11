@@ -256,16 +256,18 @@ write_wait_here:
 				}
 			}
 			//wait or abort
-			if(tts < min_lock_ts){ //wait
-				while(test_row->rcnt_pos - test_row->rcnt_neg > 0 && !simulation->is_done()){
-                    memcpy(test_row, _row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-				}
-				if(test_row->rcnt_pos - test_row->rcnt_neg > 0){ //simulation is done
-					//unlock and abort
-                    _row->lock_info = 0;
-                    mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-                    return Abort;
-				}     
+			if(tts < min_lock_ts && !simulation->is_done()){ //unlock and wait
+                _row->lock_info = 0;
+                goto write_wait_here;
+				// while(test_row->rcnt_pos - test_row->rcnt_neg > 0 && !simulation->is_done()){
+                //     memcpy(test_row, _row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				// }
+				// if(test_row->rcnt_pos - test_row->rcnt_neg > 0){ //simulation is done
+				// 	//unlock and abort
+                //     _row->lock_info = 0;
+                //     mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+                //     return Abort;
+				// }     
 				//now : test_row->rcnt_pos - test_row->rcnt_neg = 0
 			}else{ //unlock and abort
                 _row->lock_info = 0;

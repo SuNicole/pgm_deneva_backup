@@ -286,7 +286,7 @@
 #define RDMA_TXNTABLE_MAX (COROUTINE_CNT + 1) * THREAD_CNT
 // #define ROW_SET_LENGTH 100
 #define MAX_RETRY_TIME 2
-#define LOCK_LENGTH 4
+#define LOCK_LENGTH 10
 
 /***********************************************/
 // Logging
@@ -314,9 +314,9 @@
 #define SKEW_METHOD ZIPF
 #define DATA_PERC 100
 #define ACCESS_PERC 0.03
-#define INIT_PARALLELISM 8
+#define INIT_PARALLELISM 1
 #define SYNTH_TABLE_SIZE 3145728
-#define ZIPF_THETA 0
+#define ZIPF_THETA 0.9
 #define TXN_WRITE_PERC 0.2
 #define TUP_WRITE_PERC 0.2
 #define SCAN_PERC           0

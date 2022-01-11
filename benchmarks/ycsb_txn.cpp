@@ -581,7 +581,11 @@ read_wait_here:
 				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
 				return Abort;						
 			}
-			uint64_t operate_size = sizeof(test_row->rcnt_pos)+sizeof(test_row->lock_info) + sizeof(test_row->ts[0])*LOCK_LENGTH;
+			uint64_t remote_ts_pointer = row_t::get_ts_pointer(m_item->offset,iter);
+			uint64_t local_ts_pointer = row_t::get_ts_pointer((uint64_t)test_row,iter);
+			write_remote_row(yield, loc, sizeof(test_row->ts[iter]), remote_ts_pointer,(char*)local_ts_pointer,cor_id);
+			uint64_t operate_size = sizeof(test_row->lock_info) + sizeof(test_row->rcnt_pos);
+			// uint64_t operate_size = sizeof(test_row->rcnt_pos)+sizeof(test_row->lock_info) + sizeof(test_row->ts[0])*LOCK_LENGTH;
 			write_remote_row(yield, loc, operate_size, remote_rcnt_pos_pointer,(char*)local_rcnt_pos_pointer,cor_id);
 			ts_updated = true;
 			lock_type = DLOCK_SH;
@@ -727,21 +731,26 @@ write_wait_here:
 				}
 			}
 			//wait or abort
-			if(tts < min_lock_ts){ //wait
-				while(test_row->rcnt_pos - test_row->rcnt_neg > 0 && !simulation->is_done()){
-					mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-					test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);				
-				}
-				if(test_row->rcnt_pos - test_row->rcnt_neg > 0){ //simulation is done
-					//unlock and abort
-					test_row->lock_info = 0;
-					write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
-					row_local = NULL;
-					txn->rc = Abort;
-					mem_allocator.free(m_item, sizeof(itemid_t));
-					mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-					return Abort;	
-				}
+			if(tts < min_lock_ts && !simulation->is_done()){ 
+				//unlock and wait
+				test_row->lock_info = 0;
+				write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
+				mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				goto write_wait_here;
+				// while(test_row->rcnt_pos - test_row->rcnt_neg > 0 && !simulation->is_done()){
+				// 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				// 	test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);				
+				// }
+				// if(test_row->rcnt_pos - test_row->rcnt_neg > 0){ //simulation is done
+				// 	//unlock and abort
+				// 	test_row->lock_info = 0;
+				// 	write_remote_row(yield, loc, sizeof(uint64_t),remote_lock_info_pointer,(char*)local_lock_info_pointer,cor_id);
+				// 	row_local = NULL;
+				// 	txn->rc = Abort;
+				// 	mem_allocator.free(m_item, sizeof(itemid_t));
+				// 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+				// 	return Abort;	
+				// }
 				//now : test_row->rcnt_pos - test_row->rcnt_neg = 0
 			}else{ //unlock and abort
 				test_row->lock_info = 0;
