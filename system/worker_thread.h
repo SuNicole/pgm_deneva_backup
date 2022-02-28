@@ -99,4 +99,14 @@ public:
     void setup();
 
 };
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+class HotThread : public Thread {
+public:
+    RC run();
+    void setup();
+    row_t * ht_read_remote_row(uint64_t target_server,uint64_t remote_offset);
+    uint64_t ht_cas_remote_content(uint64_t target_server,uint64_t remote_offset,uint64_t old_value,uint64_t new_value);
+};
 #endif
+#endif
+

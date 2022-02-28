@@ -55,10 +55,12 @@ public:
 	RC 			index_insert(idx_key_t key, itemid_t * item, int part_id=-1);
 	RC 			index_insert_nonunique(idx_key_t key, itemid_t * item, int part_id=-1);
 	// the following call returns a single item
+	RC	 		get_index_by_id(uint64_t index, itemid_t * &item, int part_id=-1);
 	RC	 		index_read(idx_key_t key, itemid_t * &item, int part_id=-1);
 	RC	 		index_read(idx_key_t key, int count, itemid_t * &item, int part_id=-1);
 	RC	 		index_read(idx_key_t key, itemid_t * &item,
 							int part_id=-1, int thd_id=0);
+	uint64_t 	get_count();
 
 private:
 
@@ -77,6 +79,7 @@ private:
 	uint64_t	 		_bucket_cnt;
 	uint64_t 			_bucket_cnt_per_part;
 	IndexInfo          *index_info;
+	uint64_t			_index_size;
 };
 
 #endif

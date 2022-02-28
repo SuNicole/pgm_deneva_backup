@@ -604,9 +604,9 @@ def ycsb_scaling_abort():
 
 def ycsb_skew():
     wl = 'YCSB'
-    nnodes = [4]
+    nnodes = [3]
     # algos=['RDMA_CICADA','RDMA_MAAT','RDMA_MVCC','RDMA_NO_WAIT','RDMA_NO_WAIT2','RDMA_SILO','RDMA_TS1','RDMA_WAIT_DIE2']
-    algos=['RDMA_SILO']
+    algos=['RDMA_OPT_WAIT_DIE']
     # algos=['RDMA_NO_WAIT','RDMA_WAIT_DIE','RDMA_WOUND_WAIT','RDMA_NO_WAIT2','RDMA_WAIT_DIE2','RDMA_WOUND_WAIT2']
     base_table_size=1048576*10
     #base_table_size=1048576*4    

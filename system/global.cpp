@@ -58,6 +58,7 @@
 #include "rdma_mocc.h"
 #include "rdma_mvcc.h"
 #include "rdma_2pl.h"
+#include "rdma_opt_2pl.h"
 #include "rdma_maat.h"
 #include "rdma_ts1.h"
 #include "rdma_ts.h"
@@ -111,6 +112,9 @@ rdma_mvcc rmvcc_man;
 #endif
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 RDMA_2pl r2pl_man;
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+RDMA_opt_2pl o2pl_man;
 #endif
 #if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_TS || CC_ALG == RDMA_TS1
 RdmaTxnTable rdma_txn_table;
@@ -231,12 +235,19 @@ UInt32 g_work_thread_cnt = 1;
 #else
 UInt32 g_work_thread_cnt = 0;
 #endif
+
+#if ALL_ES_LOCK || ((CC_ALG != RDMA_OPT_NO_WAIT)&&(CC_ALG != RDMA_OPT_WAIT_DIE))
+UInt32 g_hot_thread_cnt = 0;
+#else
+UInt32 g_hot_thread_cnt = 1;
+#endif
+
 UInt32 g_send_thread_cnt = SEND_THREAD_CNT;
 #if CC_ALG == CALVIN || CC_ALG == RDMA_CALVIN
 // sequencer + scheduler thread
 UInt32 g_total_thread_cnt = g_thread_cnt + g_rem_thread_cnt + g_send_thread_cnt + g_abort_thread_cnt + g_logger_thread_cnt + 2 + g_work_thread_cnt;
 #else
-UInt32 g_total_thread_cnt = g_thread_cnt + g_rem_thread_cnt + g_send_thread_cnt + g_abort_thread_cnt + g_logger_thread_cnt + g_work_thread_cnt;
+UInt32 g_total_thread_cnt = g_thread_cnt + g_rem_thread_cnt + g_send_thread_cnt + g_abort_thread_cnt + g_logger_thread_cnt + g_work_thread_cnt + g_hot_thread_cnt;
 #endif
 
 UInt32 g_total_client_thread_cnt = g_client_thread_cnt + g_client_rem_thread_cnt + g_client_send_thread_cnt;
@@ -399,8 +410,6 @@ int rdma_server_port[NODE_CNT];
 
 //rdmaio::Arc<rdmaio::rmem::RegHandler> local_mr[NODE_CNT][THREAD_CNT];
 
-
-
 //r2::Allocator *r2_allocator;
 //rdmaio::RCQP *qp[NODE_CNT][THREAD_CNT];
 bool g_init_done[50] = {false};
@@ -411,3 +420,7 @@ int max_num_atomic_retry = 0;
 
 //the maximum number of doorbell batched row
 int max_batch_index = REQ_PER_QUERY; 
+
+unordered_map<uint64_t, faa_info> accum_faa;
+
+pthread_mutex_t * accum_faa_mutex;

@@ -14,6 +14,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+#include <map>  
+#include <unordered_map>
 
 #include "global.h"
 #include "config.h"
@@ -36,6 +38,7 @@
 #include "row_mvcc.h"
 #include "row_rdma_mvcc.h"
 #include "row_rdma_2pl.h"
+#include "row_rdma_opt_2pl.h"
 #include "row_rdma_ts1.h"
 #include "row_rdma_ts.h"
 #include "row_rdma_cicada.h"
@@ -360,7 +363,7 @@ RC YCSBTxnManager::run_ycsb_0(yield_func_t &yield,ycsb_request * req,row_t *& ro
     mem_allocator.free(m_item, sizeof(itemid_t));
   }
   INC_STATS(get_thd_id(),trans_benchmark_compute_time,get_sys_clock() - starttime);
-  rc = get_row(yield,row, type,row_local,cor_id);
+  rc = get_row(yield,row, type,row_local,cor_id, req->key);
   return rc;
 }
 

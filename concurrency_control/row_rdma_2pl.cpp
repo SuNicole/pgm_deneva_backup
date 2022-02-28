@@ -172,7 +172,6 @@ RC Row_rdma_2pl::lock_get(yield_func_t &yield,lock_t type, TxnManager * txn, row
     local_retry_lock:
         uint64_t loc = g_node_id;
         uint64_t try_lock = -1;
-        
 
         uint64_t thd_id = txn->get_thd_id();
 		auto mr = client_rm_handler->get_reg_attr().value();

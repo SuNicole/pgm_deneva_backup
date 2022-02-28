@@ -30,6 +30,7 @@
 #include <typeinfo>
 #include <list>
 #include <map>
+#include <unordered_map>
 #include <set>
 #include <queue>
 #include <string>
@@ -92,7 +93,10 @@ class rdma_mvcc;
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 class RDMA_2pl;
 #endif
-#if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT || RDMA_TS
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+class RDMA_opt_2pl;
+#endif
+#if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT || RDMA_TS || CC_ALG == RDMA_TS1
 class RdmaTxnTable;
 #endif
 #if CC_ALG == RDMA_DSLR_NO_WAIT
@@ -184,7 +188,10 @@ extern rdma_mvcc rmvcc_man;
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 extern RDMA_2pl r2pl_man;
 #endif
-#if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_TS || CC_ALG == RDMA_TS1
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+extern RDMA_opt_2pl o2pl_man;
+#endif
+#if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT|| CC_ALG == RDMA_TS || CC_ALG == RDMA_TS1
 extern RdmaTxnTable rdma_txn_table;
 #endif
 #if CC_ALG == RDMA_DSLR_NO_WAIT
@@ -311,6 +318,7 @@ extern UInt32 g_thread_cnt;
 extern UInt32 g_abort_thread_cnt;
 extern UInt32 g_logger_thread_cnt;
 extern UInt32 g_work_thread_cnt;
+extern UInt32 g_hot_thread_cnt;
 extern UInt32 g_tcp_thread_cnt;
 extern UInt32 g_send_thread_cnt;
 extern UInt32 g_rem_thread_cnt;
@@ -570,9 +578,18 @@ enum RecordStatus {COMMITED = 0, ABORTED, PENDING};
 #define UINT64_MAX 		18446744073709551615UL
 #endif // UINT64_MAX
 
-#endif
-
 extern int total_num_atomic_retry;  
 extern int max_num_atomic_retry;
 
 extern int max_batch_index;
+
+typedef struct{
+  uint64_t accum_num;
+  uint64_t loc;
+  uint64_t pointer;
+}faa_info;
+
+extern unordered_map<uint64_t, faa_info> accum_faa;
+extern pthread_mutex_t * accum_faa_mutex; 
+
+#endif

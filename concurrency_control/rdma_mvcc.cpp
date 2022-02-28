@@ -198,7 +198,7 @@ RC rdma_mvcc::finish(yield_func_t &yield, RC rc,TxnManager * txnMng, uint64_t co
                     INC_STATS(txnMng->get_thd_id(), worker_yield_cnt, 1);
                     INC_STATS(txnMng->get_thd_id(), worker_yield_time, yield_endtime - txnMng->h_thd->last_yield_time);
                     INC_STATS(txnMng->get_thd_id(), worker_idle_time, yield_endtime - txnMng->h_thd->last_yield_time);
-                    dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_thread_cnt]->poll_send_comp();
+                    dbres1 = rc_qp[i][txnMng->get_thd_id() + cor_id * g_total_thread_cnt]->poll_send_comp();
                     waitcomp_time = get_sys_clock();
                     
                     INC_STATS(txnMng->get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);

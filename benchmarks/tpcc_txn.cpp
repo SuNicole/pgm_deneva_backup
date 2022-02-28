@@ -29,6 +29,7 @@
 #include "transport.h"
 #include "msg_queue.h"
 #include "row_rdma_2pl.h"
+#include "row_rdma_opt_2pl.h"
 #include "message.h"
 #include "rdma.h"
 #include "src/rdma/sop.hh"
@@ -419,37 +420,39 @@ itemid_t* TPCCTxnManager::tpcc_read_remote_index(TPCCQuery * query) {
     int key = 0;
     uint64_t loc = w_loc; 
     switch(state){
-        	case TPCC_PAYMENT0 ://operate table WH
-                key = w_id/w_loc;
-                loc = GET_NODE_ID(wh_to_part(w_id));
-                remote_offset = item_index_size + (w_id/w_loc)*sizeof(IndexInfo);
-                break;
-            case TPCC_PAYMENT4 ://operate table CUSTOMER
-                if(query->by_last_name){
-                    key = custKey(c_id, c_d_id, c_w_id);
-                                                               // return (distKey(c_d_id, c_w_id) * g_cust_per_dist + c_id );
-                    remote_offset = item_index_size + wh_index_size + dis_index_size + cust_index_size 
-                                    + (key ) * sizeof(IndexInfo);
-                }else{
-                    key = custKey(c_id, c_d_id, c_w_id);
-                                                               // return (distKey(c_d_id, c_w_id) * g_cust_per_dist + c_id );
-                    remote_offset = item_index_size + wh_index_size + dis_index_size 
-                                    + (key ) * sizeof(IndexInfo);
-                }
-                loc = GET_NODE_ID(wh_to_part(c_w_id));
-                break;
-            case TPCC_NEWORDER0 ://operate table WH
-                key = w_id/w_loc;
-                loc = GET_NODE_ID(wh_to_part(w_id));
-                remote_offset = item_index_size + (w_id/w_loc )*sizeof(IndexInfo);
-                break;
-            case TPCC_NEWORDER8 ://operate table STOCK
-                key = stockKey(ol_i_id, ol_supply_w_id);
-                loc = GET_NODE_ID(wh_to_part(tpcc_query->items[next_item_id]->ol_supply_w_id));
-                //loc = GET_NODE_ID(part_id_ol_supply_w);
-                remote_offset = item_index_size + wh_index_size + dis_index_size + cust_index_size + cl_index_size
-                                + (key ) * sizeof(IndexInfo);
-                break;
+		case TPCC_PAYMENT0 ://operate table WH
+			key = w_id/w_loc;
+			loc = GET_NODE_ID(wh_to_part(w_id));
+			remote_offset = item_index_size + (w_id/w_loc)*sizeof(IndexInfo);
+			break;
+		case TPCC_PAYMENT4 ://operate table CUSTOMER
+			if(query->by_last_name){
+				key = custKey(c_id, c_d_id, c_w_id);
+															// return (distKey(c_d_id, c_w_id) * g_cust_per_dist + c_id );
+				remote_offset = item_index_size + wh_index_size + dis_index_size + cust_index_size 
+								+ (key ) * sizeof(IndexInfo);
+			}else{
+				key = custKey(c_id, c_d_id, c_w_id);
+															// return (distKey(c_d_id, c_w_id) * g_cust_per_dist + c_id );
+				remote_offset = item_index_size + wh_index_size + dis_index_size 
+								+ (key ) * sizeof(IndexInfo);
+			}
+			loc = GET_NODE_ID(wh_to_part(c_w_id));
+			break;
+		case TPCC_NEWORDER0 ://operate table WH
+			key = w_id/w_loc;
+			loc = GET_NODE_ID(wh_to_part(w_id));
+			remote_offset = item_index_size + (w_id/w_loc )*sizeof(IndexInfo);
+			break;
+		case TPCC_NEWORDER8 ://operate table STOCK
+			key = stockKey(ol_i_id, ol_supply_w_id);
+			loc = GET_NODE_ID(wh_to_part(tpcc_query->items[next_item_id]->ol_supply_w_id));
+			//loc = GET_NODE_ID(part_id_ol_supply_w);
+			remote_offset = item_index_size + wh_index_size + dis_index_size + cust_index_size + cl_index_size
+							+ (key ) * sizeof(IndexInfo);
+			break;
+		default:
+			break;
     }
     
 	assert(loc != g_node_id);

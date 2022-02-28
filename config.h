@@ -112,16 +112,22 @@
 /***********************************************/
 // Simulation + Hardware
 /***********************************************/
-#define NODE_CNT 4
+#define NODE_CNT 3
 #define THREAD_CNT 24
 #define REM_THREAD_CNT 1
 #define SEND_THREAD_CNT 1
 #define COROUTINE_CNT 8
+
+#if ALL_ES_LOCK || ((CC_ALG != RDMA_OPT_NO_WAIT) && (CC_ALG != RDMA_OPT_WAIT_DIE))
+#define HOT_THREAD_CNT 0
+#else
+#define HOT_THREAD_CNT 1
+#endif
 #define CORE_CNT 2
 // PART_CNT should be at least NODE_CNT
 #define PART_CNT NODE_CNT
 #define CLIENT_NODE_CNT 1
-#define CLIENT_THREAD_CNT 2
+#define CLIENT_THREAD_CNT 4
 #define CLIENT_REM_THREAD_CNT 1
 #define CLIENT_SEND_THREAD_CNT 1
 #define CLIENT_RUNTIME false
@@ -209,6 +215,7 @@
 
 // WAIT_DIE, NO_WAIT, DL_DETECT, TIMESTAMP, MVCC, HSTORE, OCC, VLL, RDMA_SILO, RDMA_NO_WAIT, RDMA_NO_WAIT2, RDMA_WAIT_DIE2,RDMA_TS1,RDMA_SILO,RDMA_MVCC,RDMA_MAAT,RDMA_CICADA
 //RDMA_NO_WAIT2, RDMA_WAIT_DIE2:no matter read or write, mutex lock is used 
+//RDMA_OPT_NO_WAIT, RDMA_OPT_WAIT_DIE
 #define ISOLATION_LEVEL SERIALIZABLE
 
 #define CC_ALG RDMA_TS1
@@ -216,16 +223,18 @@
 #define YCSB_ABORT_MODE false
 #define QUEUE_C  APACITY_NEW 1000000
 
-#define DEBUG_PRINTF  false
+#define DEBUG_PRINTF false
+#define ALL_ES_LOCK true
 
 #if RDMA_ONE_SIDE 
+#define BATCH_FAA true
 #define BATCH_INDEX_AND_READ false //keep this "false", a fail test for SILO
 #endif
 
 /***********************************************/
 // USE RDMA
 /**********************************************/
-#if (CC_ALG == RDMA_MAAT || CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_TS1 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_MOCC || RDMA_TWO_SIDE == true) && RDMA_SIT != 0
+#if (CC_ALG == RDMA_MAAT || CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_TS1 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_MOCC || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT || RDMA_TWO_SIDE == true) && RDMA_SIT != 0
 // #define USE_RDMA CHANGE_MSG_QUEUE
 #define USE_RDMA CHANGE_TCP_ONLY
 #endif
@@ -254,7 +263,7 @@
 #else
   #define CALVIN_THREAD_NUM 0
 #endif
-#define RDMA_MAX_CLIENT_QP (THREAD_CNT + REM_THREAD_CNT + SEND_THREAD_CNT + 1 + LOG_THREAD_NUM + WORK_THREAD_NUM + CALVIN_THREAD_NUM)
+#define RDMA_MAX_CLIENT_QP (THREAD_CNT + REM_THREAD_CNT + SEND_THREAD_CNT + 1 + LOG_THREAD_NUM + WORK_THREAD_NUM + CALVIN_THREAD_NUM + HOT_THREAD_CNT)
 // #define RDMA_SEND_COUNT (RDMA_BUFFER_SIZE / 4096)
 // #define RDMA_COLOR_LOG
 
@@ -553,6 +562,8 @@ enum PPSTxnType {
 #define RDMA_MOCC 44
 #define RDMA_TS 46
 #define RDMA_DSLR_NO_WAIT 45
+#define RDMA_OPT_NO_WAIT 46
+#define RDMA_OPT_WAIT_DIE 47
 // TIMESTAMP allocation method.
 #define TS_MUTEX          1
 #define TS_CAS            2

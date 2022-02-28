@@ -68,6 +68,7 @@ class Row_rdma_mocc;
 class Row_rdma_mvcc;
 class rdma_mvcc;
 class Row_rdma_2pl;
+class Row_rdma_opt_2pl;
 class Row_rdma_maat;
 class Row_rdma_ts1;
 class Row_rdma_ts;
@@ -152,7 +153,7 @@ public:
 	RC get_ts(uint64_t &orig_wts, uint64_t &orig_rts);
 	RC get_row(access_t type, TxnManager * txn, row_t *& row, uint64_t &orig_wts, uint64_t &orig_rts);
 	RC get_row(access_t type, TxnManager *txn, Access *access);
-	RC get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *access,uint64_t cor_id);
+	RC get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *access,uint64_t cor_id, uint64_t req_key = 0);
 	RC get_row_post_wait(access_t type, TxnManager * txn, row_t *& row);
 	uint64_t return_row(RC rc, access_t type, TxnManager *txn, row_t *row);
 #if CC_ALG == RDMA_TS1 || CC_ALG == RDMA_TS
@@ -160,6 +161,35 @@ public:
 #endif
 	void return_row(RC rc, access_t type, TxnManager * txn, row_t * row, uint64_t _min_commit_ts);
 
+	
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+	// static int get_row_write_size(int tuple_size) {
+	// 	return get_row_size(tuple_size) - sizeof(conflict_num) - sizeof(is_hot) - sizeof(rcnt_neg);
+	// }
+	// static uint64_t get_rcnt_neg_pointer(row_t *p) {
+	// 	return (char*)p - rdma_global_buffer + sizeof(conflict_num) + sizeof(is_hot);
+	// }
+	static uint64_t get_rcnt_neg_pointer(uint64_t offset) {
+		return offset + sizeof(conflict_num) + sizeof(is_hot);
+	}
+	// static uint64_t get_rcnt_pos_pointer(row_t *p) {
+	// 	return  (char*)p - rdma_global_buffer + sizeof(conflict_num) + sizeof(is_hot) + sizeof(rcnt_neg);
+	// }
+	static uint64_t get_rcnt_pos_pointer(uint64_t offset) {
+		return offset + sizeof(conflict_num) + sizeof(is_hot) + sizeof(rcnt_neg);
+	}
+	// static uint64_t get_lock_info_pointer(row_t *p) {
+	// 	return  (char*)p - rdma_global_buffer + sizeof(conflict_num) + sizeof(is_hot) + sizeof(rcnt_neg) + sizeof(rcnt_pos);
+	// }
+	static uint64_t get_lock_info_pointer(uint64_t offset) {
+		return offset + sizeof(conflict_num) + sizeof(is_hot) + sizeof(rcnt_neg) + sizeof(rcnt_pos);
+	}
+#if CC_ALG == RDMA_OPT_WAIT_DIE
+	static uint64_t get_ts_pointer(uint64_t offset, int iter) {
+		return offset + sizeof(conflict_num) + sizeof(is_hot) + sizeof(rcnt_neg) + sizeof(rcnt_pos) + sizeof(lock_info) + sizeof(ts[0])*iter;
+	}
+#endif
+#endif	
     #if CC_ALG == RDMA_SILO
         volatile uint64_t	_tid_word;  //lcok info ：txn_id
         ts_t 			timestamp;
@@ -191,6 +221,21 @@ public:
 		volatile uint64_t ts[LOCK_LENGTH];
 		volatile uint64_t lock_owner[LOCK_LENGTH];
 		Row_rdma_2pl * manager;
+	#elif CC_ALG == RDMA_OPT_NO_WAIT
+		volatile uint64_t conflict_num;
+		volatile uint64_t is_hot;
+		volatile uint64_t rcnt_neg;
+		volatile uint64_t rcnt_pos;
+		volatile uint64_t lock_info;
+		Row_rdma_opt_2pl * manager;
+	#elif CC_ALG == RDMA_OPT_WAIT_DIE
+		volatile uint64_t conflict_num;
+		volatile uint64_t is_hot;
+		volatile uint64_t rcnt_neg;
+		volatile uint64_t rcnt_pos;
+		volatile uint64_t lock_info;
+		volatile uint64_t ts[LOCK_LENGTH];
+		Row_rdma_opt_2pl * manager;		
 	#elif CC_ALG == RDMA_MAAT
 	    volatile uint64_t _tid_word;
 		Row_rdma_maat * manager;
