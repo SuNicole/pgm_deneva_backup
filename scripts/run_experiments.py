@@ -205,7 +205,7 @@ for exp in exps:
 
     tcnt = []
     for e in experiments:
-        tcnt.append(e[-2])
+        tcnt.append(e[-6])
     tcnt = sorted(list(set(tcnt)))
 
     cocnt = []

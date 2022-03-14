@@ -85,7 +85,7 @@ private:
 //   itemid_t* read_remote_index(ycsb_request * req);
 
   RC run_ycsb_0(yield_func_t &yield,ycsb_request * req,row_t *& row_local,uint64_t cor_id);
-  RC run_ycsb_1(access_t acctype, row_t * row_local);
+  RC run_ycsb_1(access_t acctype, row_t * row_local,yield_func_t &yield, uint64_t cor_id);
   RC run_ycsb(yield_func_t &yield,uint64_t cor_id);
   bool is_done() ;
   bool is_local_request(uint64_t idx) ;

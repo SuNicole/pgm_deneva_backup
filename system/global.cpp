@@ -66,6 +66,7 @@
 #include "rdma_calvin.h"
 #include "rdma_null.h"
 #include "rdma_dslr_no_wait.h"
+#include "rdma_bamboo.h"
 #include "key_xid.h"
 #include "rts_cache.h"
 #include "src/allocator_master.hh"
@@ -121,6 +122,9 @@ RdmaTxnTable rdma_txn_table;
 #endif
 #if CC_ALG == RDMA_DSLR_NO_WAIT
 RDMA_dslr_no_wait dslr_man;
+#endif
+#if CC_ALG == RDMA_BAMBOO_NO_WAIT
+RDMA_bamboo bamboo_man;
 #endif
 #if CC_ALG == RDMA_MAAT
 RDMA_Maat rmaat_man;
@@ -287,7 +291,7 @@ UInt64 tuple_count = 0;
 UInt64 max_tuple_size = 0;
 pthread_mutex_t * RDMA_MEMORY_LATCH;
 
-UInt64 rdma_buffer_size = 30*(1024*1024*1024L);
+UInt64 rdma_buffer_size = 25*(1024*1024*1024L);
 UInt64 client_rdma_buffer_size = 600*(1024*1024L);
 UInt64 rdma_index_size = (1024*1024*1024L);
 
@@ -424,3 +428,5 @@ int max_batch_index = REQ_PER_QUERY;
 unordered_map<uint64_t, faa_info> accum_faa;
 
 pthread_mutex_t * accum_faa_mutex;
+
+map<uint64_t, uint64_t> txn_status;//0 - uncommitted;1 - committed;2 - abort

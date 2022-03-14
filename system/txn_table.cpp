@@ -112,6 +112,7 @@ TxnManager * TxnTable::get_transaction_manager(uint64_t thd_id, uint64_t txn_id,
     prof_starttime = get_sys_clock();
 
     txn_man->set_txn_id(txn_id);
+    // txn_status[txn_id] = 0;//init txn status as uncommitted
     txn_man->set_batch_id(batch_id);
     t_node->txn_man = txn_man;
     txn_man->txn_stats.starttime = get_sys_clock();

@@ -52,11 +52,13 @@
 #include "manager.h"
 #include "row_rdma_2pl.h"
 #include "row_rdma_opt_2pl.h"
+#include "row_rdma_bamboo.h"
 #include "rdma_silo.h"
 #include "rdma_mocc.h"
 #include "rdma_mvcc.h"
 #include "rdma_2pl.h"
 #include "rdma_dslr_no_wait.h"
+#include "rdma_bamboo.h"
 #include "rdma_opt_2pl.h"
 #include "rdma_maat.h"
 #include "rdma_ts1.h"
@@ -286,6 +288,9 @@ void Transaction::init() {
 	batch_id = UINT64_MAX;
 	DEBUG_M("Transaction::init array insert_rows\n");
 	insert_rows.init(g_max_items_per_txn + 10);
+#if CC_ALG == RDMA_BAMBOO_NO_WAIT
+    dependency_txn.init(100);
+#endif
 	DEBUG_M("Transaction::reset array accesses\n");
 	accesses.init(MAX_ROW_PER_TXN);
 
@@ -743,7 +748,7 @@ RC TxnManager::start_commit(yield_func_t &yield, uint64_t cor_id) {
 		else {
 			txn->rc = Abort;
 			DEBUG("%ld start_abort\n",get_txn_id());
-			if(query->partitions_touched.size() > 1 && CC_ALG != RDMA_SILO &&  CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_MAAT && CC_ALG != RDMA_CICADA && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_MOCC && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE) {
+			if(query->partitions_touched.size() > 1 && CC_ALG != RDMA_SILO &&  CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_MAAT && CC_ALG != RDMA_CICADA && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_MOCC && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE && CC_ALG != RDMA_BAMBOO_NO_WAIT) {
 				send_finish_messages();
 				abort(yield, cor_id);
 				rc = Abort;
@@ -929,11 +934,66 @@ uint64_t TxnManager::decr_rsp(int i) {
 	return result;
 }
 
-void TxnManager::release_last_row_lock() {
+void TxnManager::release_last_row_lock(yield_func_t &yield, uint64_t cor_id,RC rc) {
 	assert(txn->row_cnt > 0);
 	row_t * orig_r = txn->accesses[txn->row_cnt-1]->orig_row;
 	access_t type = txn->accesses[txn->row_cnt-1]->type;
+
+#if CC_ALG == RDMA_BAMBOO_NO_WAIT
+    uint64_t location = txn->accesses[txn->row_cnt-1]->location;
+    uint64_t offset = txn->accesses[txn->row_cnt-1]->offset;
+    row_t * remote_row = NULL;
+    uint64_t try_lock = -1;
+	if(type == RD){//release lock
+
+        bool success_lock = false;
+        while(success_lock == false && !simulation->is_done()){
+            remote_row = read_remote_row(yield,location,offset,cor_id);
+        
+            uint64_t *lock_info = (uint64_t *)mem_allocator.alloc(sizeof(uint64_t));
+            *lock_info = remote_row->_tid_word;
+            uint64_t new_lock_info;
+            uint64_t lock_type;
+            uint64_t lock_num;
+            uint64_t new_lock_num;  
+            Row_rdma_bamboo::info_decode(*lock_info,lock_type,lock_num);
+            new_lock_num = lock_num-1;
+            Row_rdma_bamboo::info_encode(new_lock_info,lock_type,new_lock_num);
+
+            //remote CAS unlock
+            try_lock = -1;
+            try_lock = cas_remote_content(yield,location,offset,*lock_info,new_lock_info,cor_id);
+
+            if(try_lock == *lock_info){
+                success_lock = true;
+                mem_allocator.free(lock_info, sizeof(uint64_t));
+                break;
+            }else{
+                mem_allocator.free(lock_info, sizeof(uint64_t));
+                continue;
+            }
+        }
+
+    }else if(type == WR){//modify and release lock
+        remote_row = read_remote_row(yield,location,offset,cor_id);
+        remote_row->_tid_word = 0;
+        uint64_t operate_size = row_t::get_row_size(remote_row->tuple_size);
+        for(int i = 0;i < RETIRE_NUM;i++){
+            if(remote_row->lock_retire[i] == 0){
+                remote_row->lock_retire[i] = get_txn_id();
+                break;
+            }else{
+                if( i == RETIRE_NUM - 1){//no location in retire_lock
+                    //TODO
+			        rc = Abort;
+                }
+            }
+        }
+        assert(write_remote_row(yield,location,operate_size,offset,(char*)remote_row,cor_id) == true);
+    }
+#else
 	orig_r->return_row(RCOK, type, this, NULL);
+#endif
 	//txn->accesses[txn->row_cnt-1]->orig_row = NULL;
 }
 
@@ -965,7 +1025,7 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
   #endif
     }
   }
-#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT|| CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE// ||  CC_ALG == RDMA_DSLR_NO_WAIT
+#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT|| CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT // ||  CC_ALG == RDMA_DSLR_NO_WAIT
 	if(txn->accesses[rid]->location == g_node_id) is_local=true;
 	else is_local=false;
 
@@ -1047,7 +1107,7 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
 #endif
 
 #if ROLL_BACK && \
-		(CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE)
+		(CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT)
 	if (type == WR && is_local) {
 		//printf("free 10 %ld\n",get_txn_id());
 		txn->accesses[rid]->orig_data->free_row();
@@ -1067,7 +1127,7 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
 		glob_manager.set_max_cts(_min_commit_ts);
 #endif
 
-#if CC_ALG != SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE
+#if CC_ALG != SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE && CC_ALG != RDMA_BAMBOO_NO_WAIT
   txn->accesses[rid]->data = NULL;
 #endif
 }
@@ -1183,6 +1243,10 @@ void TxnManager::cleanup(yield_func_t &yield, RC rc, uint64_t cor_id) {
 #endif
 #if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
     o2pl_man.finish(yield, rc, this, cor_id);
+#endif
+
+#if CC_ALG == RDMA_BAMBOO_NO_WAIT
+    bamboo_man.finish(yield, rc, this, cor_id);
 #endif
 #if CC_ALG == DLI_BASE || CC_ALG == DLI_OCC || CC_ALG == DLI_MVCC_OCC || CC_ALG == DLI_DTA || CC_ALG == DLI_DTA2 || CC_ALG == DLI_DTA3 || \
 		CC_ALG == DLI_MVCC_BASE
@@ -1321,7 +1385,7 @@ RC TxnManager::get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& 
 #if CC_ALG == SILO
 	access->tid = last_tid;
 #endif
-#if CC_ALG ==RDMA_NO_WAIT || CC_ALG ==RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_DSLR_NO_WAIT|| CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+#if CC_ALG ==RDMA_NO_WAIT || CC_ALG ==RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_DSLR_NO_WAIT|| CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT
 	access->location = g_node_id;
 	access->offset = (char*)row - rdma_global_buffer;
 #endif
@@ -1350,7 +1414,7 @@ RC TxnManager::get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& 
 	
 #endif
 
-#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE)
+#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT)
 	if (type == WR) {
 	//printf("alloc 10 %ld\n",get_txn_id());
 	uint64_t part_id = row->get_part_id();
@@ -1423,7 +1487,7 @@ RC TxnManager::get_row_post_wait(row_t *& row_rtn) {
 
 	access->type = type;
 	access->orig_row = row;
-#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE)
+#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT)
 	if (type == WR) {
 		uint64_t part_id = row->get_part_id();
 		//printf("alloc 10 %ld\n",get_txn_id());
@@ -1486,7 +1550,7 @@ RC TxnManager::get_remote_row(yield_func_t &yield, access_t type, uint64_t loc, 
 
 	#if CC_ALG == RDMA_CNULL
 		int one_cnt = RDMA_ONE_CNT;
-		for (int i = 0; i < one_cnt; i++) {
+		for (int i  = 0; i < one_cnt; i++) {
 			row_t * test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
 			mem_allocator.free(test_row,row_t::get_row_size(ROW_DEFAULT_SIZE));
 		}
@@ -3048,6 +3112,59 @@ RC TxnManager::get_remote_row(yield_func_t &yield, access_t type, uint64_t loc, 
 		rc = preserve_access(row_local,m_item,remote_row,type,remote_row->get_primary_key(),loc);
 		return rc;
 	#endif
+
+    #if CC_ALG == RDMA_BAMBOO_NO_WAIT
+        uint64_t lock_info,new_lock_info;
+		 
+        bool success_lock = false;
+        uint64_t try_lock = -1;
+        while(success_lock == false && !simulation->is_done()){
+            if(type == RD){
+                row_t * lock_read = read_remote_row(yield,loc,m_item->offset,cor_id);
+
+			    new_lock_info = 0;
+			    lock_info = lock_read->_tid_word;
+
+			    mem_allocator.free(lock_read, row_t::get_row_size(ROW_DEFAULT_SIZE));
+	
+			    bool conflict = Row_rdma_bamboo::conflict_lock(lock_info, DLOCK_SH, new_lock_info);
+
+                if(conflict){//detect conflict
+                    DEBUG_M("TxnManager::get_row(abort) access free\n");
+                    row_local = NULL;
+                    txn->rc = Abort;
+                    return Abort;
+                } 
+            }else if(type == WR){
+                lock_info = 0; //if lock_info!=0, CAS fail , Abort
+                new_lock_info = 3; //binary 11, aka 1 read lock
+            }
+
+            //lock allow
+            //CAS lock both read and write  
+            try_lock = cas_remote_content(yield,loc,m_item->offset,lock_info,new_lock_info,cor_id);
+
+            if(try_lock != lock_info && type == WR) {
+                DEBUG_M("TxnManager::get_row(abort) access free\n");
+                row_local = NULL;
+                txn->rc = Abort;
+                mem_allocator.free(m_item, sizeof(itemid_t));
+                return Abort; //原子性被破坏，CAS失败
+            }else if(try_lock != lock_info && type == RD) {
+                continue;
+            }else if(try_lock == lock_info){
+                success_lock = true;
+                break;
+            }
+        }
+
+        row_t *remote_row = read_remote_row(yield,loc,m_item->offset,cor_id);
+        //preserve old value and dependent txn in retire
+        rc = preserve_access(row_local,m_item,remote_row,type,remote_row->get_primary_key(),loc);
+        mem_allocator.free(remote_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+
+        return rc;
+    #endif
 }
 
 // This function is useless
@@ -4387,11 +4504,18 @@ RC TxnManager::preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_ro
 	access->location = loc;
 	access->offset = m_item->offset;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
-  	access->orig_row = test_row;
+
+#if CC_ALG == RDMA_BAMBOO_NO_WAIT
+    access->orig_row = test_row;
 	access->location = loc;
 	access->offset = m_item->offset;
-	access->lock_type = lock_type;
+
+    if(type == RD || type == WR){
+        for(int i = 0;i < RETIRE_NUM;i++){
+            if(test_row->lock_retire[i] == 0)break;
+            // txn->dependency_txn.add(get_txn_id()); // TODO
+        }
+    }    
 #endif
 
 #if CC_ALG == RDMA_TS1

@@ -335,7 +335,7 @@ RC YCSBTxnManager::run_txn_state(yield_func_t &yield, uint64_t cor_id) {
 	case YCSB_1 :
 		//read local row,for message queue by TCP/IP,write set has actually been written in this point,
 		//but for rdma, it was written in local, the remote data will actually be written when COMMIT
-		rc = run_ycsb_1(req->acctype,row);  
+		rc = run_ycsb_1(req->acctype,row,yield,cor_id);  
 		break;
 	case YCSB_FIN :
 		state = YCSB_FIN;
@@ -367,16 +367,17 @@ RC YCSBTxnManager::run_ycsb_0(yield_func_t &yield,ycsb_request * req,row_t *& ro
   return rc;
 }
 
-RC YCSBTxnManager::run_ycsb_1(access_t acctype, row_t * row_local) {
+RC YCSBTxnManager::run_ycsb_1(access_t acctype, row_t * row_local,yield_func_t &yield, uint64_t cor_id) {
+  RC rc = RCOK;
   uint64_t starttime = get_sys_clock();
   if (acctype == RD || acctype == SCAN) {
 	int fid = 0;
 	char * data = row_local->get_data();
 	uint64_t fval __attribute__ ((unused));
 	fval = *(uint64_t *)(&data[fid * 100]); //read fata and store to fval
-#if ISOLATION_LEVEL == READ_COMMITTED || ISOLATION_LEVEL == READ_UNCOMMITTED
+#if ISOLATION_LEVEL == READ_COMMITTED || ISOLATION_LEVEL == READ_UNCOMMITTED || CC_ALG == RDMA_BAMBOO_NO_WAIT
 	// Release lock after read
-	release_last_row_lock();
+	release_last_row_lock(yield,cor_id,rc);
 #endif
 
   } 
@@ -389,13 +390,14 @@ RC YCSBTxnManager::run_ycsb_1(access_t acctype, row_t * row_local) {
 	if (data[0] == 'a') return RCOK;
 #endif
 
-#if ISOLATION_LEVEL == READ_UNCOMMITTED
+#if ISOLATION_LEVEL == READ_UNCOMMITTED || CC_ALG == RDMA_BAMBOO_NO_WAIT
 	// Release lock after write
-	release_last_row_lock();
+	release_last_row_lock(yield,cor_id,rc);
 #endif
   }
   INC_STATS(get_thd_id(),trans_benchmark_compute_time,get_sys_clock() - starttime);
-  return RCOK;
+//   return RCOK;
+    return rc;
 }
 
 RC YCSBTxnManager::run_calvin_txn(yield_func_t &yield,uint64_t cor_id) {
@@ -491,7 +493,7 @@ RC YCSBTxnManager::run_ycsb(yield_func_t &yield,uint64_t cor_id) {
 	rc = run_ycsb_0(yield,req,row,cor_id);
 	assert(rc == RCOK);
 
-	rc = run_ycsb_1(req->acctype,row);
+	rc = run_ycsb_1(req->acctype,row,yield,cor_id);
 	assert(rc == RCOK);
   }
   return rc;

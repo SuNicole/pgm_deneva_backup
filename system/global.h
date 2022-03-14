@@ -102,6 +102,9 @@ class RdmaTxnTable;
 #if CC_ALG == RDMA_DSLR_NO_WAIT
 class RDMA_dslr_no_wait;
 #endif
+#if CC_ALG == RDMA_BAMBOO_NO_WAIT
+class RDMA_bamboo;
+#endif
 #if CC_ALG == RDMA_MAAT
 class RDMA_Maat;
 class RdmaTxnTable;
@@ -196,6 +199,9 @@ extern RdmaTxnTable rdma_txn_table;
 #endif
 #if CC_ALG == RDMA_DSLR_NO_WAIT
 extern  RDMA_dslr_no_wait dslr_man;
+#endif
+#if CC_ALG == RDMA_BAMBOO_NO_WAIT
+extern RDMA_bamboo bamboo_man;
 #endif
 #if CC_ALG == RDMA_MAAT
 extern RDMA_Maat rmaat_man;
@@ -591,5 +597,7 @@ typedef struct{
 
 extern unordered_map<uint64_t, faa_info> accum_faa;
 extern pthread_mutex_t * accum_faa_mutex; 
+
+extern map<uint64_t, uint64_t> txn_status;//0 - uncommitted;1 - committed;2 - abort
 
 #endif

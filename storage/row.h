@@ -75,6 +75,7 @@ class Row_rdma_ts;
 class Row_rdma_cicada;
 class Row_cicada;
 class Row_rdma_dslr_no_wait;
+class Row_rdma_bamboo;
 
 //struct RdmaMVHis;
 
@@ -207,6 +208,11 @@ public:
 		volatile uint64_t _tid_word; //RDMA_NO_WAIT2: only 0 or 1; RDMA_WAIT_DIE2: only 0 or ts
 		volatile uint64_t lock_owner; //解锁
 		Row_rdma_2pl * manager;
+	#elif CC_ALG == RDMA_BAMBOO_NO_WAIT
+		volatile uint64_t _tid_word; //RDMA_NO_WAIT2: only 0 or 1; RDMA_WAIT_DIE2: only 0 or ts
+		volatile uint64_t lock_owner; //解锁
+		volatile uint64_t lock_retire[RETIRE_NUM];
+		Row_rdma_bamboo * manager;
     #elif CC_ALG == RDMA_DSLR_NO_WAIT
         volatile uint64_t _tid_word; //read lock(4个16进制) | write lock | read txn | write txn
 		volatile uint64_t _reset_from;
@@ -254,7 +260,7 @@ public:
 		Row_cicada * manager;
 	#elif CC_ALG == RDMA_TS1
 		volatile uint64_t	mutx;
-		volatile uint64_t	tid[LOCK_LENGTH];
+		volatile uint64_t	tid[CASCADING_LENGTH];
 		ts_t wts;
     	ts_t rts;
 		Row_rdma_ts1 * manager;
