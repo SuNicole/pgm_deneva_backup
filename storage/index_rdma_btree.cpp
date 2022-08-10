@@ -173,6 +173,7 @@ RC IndexRdmaBtree::index_read(idx_key_t key, itemid_t *&item, int part_id, int t
             item->offset = leaf->child_offsets[i];
 	        item->location = (row_t *)(rdma_global_buffer + leaf->child_offsets[i]);
             item->leaf_node_offset = (char*)leaf - rdma_global_buffer;
+            item->parent = leaf;
             if(((row_t*)(item->location))->get_primary_key() == key){
                 // printf("[index_rdma_btree.cpp:150]get right index\n");
             }

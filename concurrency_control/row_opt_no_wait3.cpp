@@ -41,13 +41,15 @@ RC Row_opt_no_wait::lock_get(access_t type, itemid_t *m_item,TxnManager * txn){
             //acquire is lock
         uint64_t add_value = 1;
         add_value = add_value<<48;
-        uint64_t faa_result = ATOM_FETCH_ADD(range_node->intent_lock,add_value);
+        uint64_t faa_result = 0;
+        // ATOM_FETCH_ADD(range_node->intent_lock,add_value);
 
         if(txn->is_lock_content(faa_result)){
 			// INC_STATS(txn->get_thd_id(), is_content_abort2, 1);
             add_value = -1;
             add_value = add_value<<48;
-            faa_result = ATOM_FETCH_ADD(range_node->intent_lock,add_value);
+            faa_result = 0;
+            // ATOM_FETCH_ADD(range_node->intent_lock,add_value);
             // printf("[row_opt_no_wait3.cpp:48]is content abort\n");
             return Abort;
         }
@@ -59,7 +61,8 @@ RC Row_opt_no_wait::lock_get(access_t type, itemid_t *m_item,TxnManager * txn){
             // printf("[row_opt_no_wait3.cpp:59]lock = %ld,key = %ld,is = %ld,ix = %ld,s = %ld,x = %ld\n",lock,row->get_primary_key(),txn->decode_is_lock(lock),txn->decode_ix_lock(lock),txn->decode_s_lock(lock),txn->decode_x_lock(lock));
             add_value = -1;
             add_value = add_value<<48;
-            faa_result = ATOM_FETCH_ADD(range_node->intent_lock,add_value);
+            faa_result = 0;
+            // ATOM_FETCH_ADD(range_node->intent_lock,add_value);
             // printf("[row_opt_no_wait3.cpp:57]s content abort\n");
             return Abort;
         }
@@ -69,9 +72,11 @@ RC Row_opt_no_wait::lock_get(access_t type, itemid_t *m_item,TxnManager * txn){
         faa_result = ATOM_FETCH_ADD(row->_tid_word,add_value);
         if(txn->s_lock_content(faa_result)){
             add_value = (-1)<<48;
-            faa_result = ATOM_FETCH_ADD(range_node->intent_lock,add_value);
+            faa_result = 0;
+            // ATOM_FETCH_ADD(range_node->intent_lock,add_value);
             add_value = (-1)<<16;
-            faa_result = ATOM_FETCH_ADD(row->_tid_word,add_value);
+            faa_result = 0;
+            // ATOM_FETCH_ADD(row->_tid_word,add_value);
             // printf("[row_opt_no_wait3.cpp:68]s content abort\n");
             return Abort;
         }
@@ -100,12 +105,14 @@ RC Row_opt_no_wait::lock_get(access_t type, itemid_t *m_item,TxnManager * txn){
 
         uint64_t faa_num = 1;
         faa_num = faa_num<<32;
-        uint64_t faa_result = ATOM_FETCH_ADD(range_node->intent_lock,faa_num);
+        uint64_t faa_result = 0;
+        // ATOM_FETCH_ADD(range_node->intent_lock,faa_num);
 
         if(txn->ix_lock_content(faa_result)){
             faa_num = -1;
             faa_num = faa_num<<32;
-            uint64_t faa_result = ATOM_FETCH_ADD(range_node->intent_lock,faa_num);
+            uint64_t faa_result = 0; 
+            // ATOM_FETCH_ADD(range_node->intent_lock,faa_num);
             // printf("[row_opt_no_wait3.cpp:92]ix content abort\n");
             return Abort;
         }
@@ -116,7 +123,8 @@ RC Row_opt_no_wait::lock_get(access_t type, itemid_t *m_item,TxnManager * txn){
 			// INC_STATS(txn->get_thd_id(), x_content_abort, 1);
             faa_num = -1;
             faa_num = faa_num<<32;
-            faa_result = ATOM_FETCH_ADD(range_node->intent_lock,faa_num);
+            faa_result = 0;
+            // ATOM_FETCH_ADD(range_node->intent_lock,faa_num);
             // printf("[row_opt_no_wait3.cpp:115]x content abort\n");
             return Abort;
         }
@@ -129,9 +137,11 @@ RC Row_opt_no_wait::lock_get(access_t type, itemid_t *m_item,TxnManager * txn){
         if(txn->x_lock_content(faa_result)){
             faa_num = -1;
             faa_num = faa_num<<32;
-            faa_result = ATOM_FETCH_ADD(range_node->intent_lock,faa_num);
+            faa_result = 0;
+            // ATOM_FETCH_ADD(range_node->intent_lock,faa_num);
             faa_num = -1;
-            faa_result = ATOM_FETCH_ADD(row->_tid_word,faa_num);
+            faa_result = 0;
+            // ATOM_FETCH_ADD(row->_tid_word,faa_num);
             // printf("[row_opt_no_wait3.cpp:127]x content abort\n");
             return Abort;
         }
@@ -165,7 +175,8 @@ RC Row_opt_no_wait::lock_release(TxnManager * txn,uint64_t rid) {
         //release range lock(IX)
         faa_num = -1;
         faa_num = faa_num<<32;
-        faa_result = ATOM_FETCH_ADD(leaf_node->intent_lock,faa_num);
+        faa_result =0;
+        //  ATOM_FETCH_ADD(leaf_node->intent_lock,faa_num);
         // printf("[row_opt_no_wait3.cpp:169]faa_result = %ld,intent_lock = %ld,old ix = %ld,new ix = %ld\n",faa_result,leaf_node->intent_lock,txn->decode_ix_lock(faa_result),txn->decode_ix_lock(leaf_node->intent_lock));
     }else if(access->type == RD){
         // unlock data lock(S)
@@ -176,7 +187,8 @@ RC Row_opt_no_wait::lock_release(TxnManager * txn,uint64_t rid) {
         // unlock range lock(IS)
         faa_num = -1;
         faa_num = faa_num<<48;
-        faa_result = ATOM_FETCH_ADD(leaf_node->intent_lock,faa_num);
+        faa_result = 0;
+        // ATOM_FETCH_ADD(leaf_node->intent_lock,faa_num);
     }
     return RCOK;
 }

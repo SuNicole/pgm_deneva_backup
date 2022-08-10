@@ -15,11 +15,12 @@ void RDMA_opt_no_wait3::write_and_unlock(yield_func_t &yield, RC rc, row_t * row
 
     //release data lock(X)
     uint64_t faa_num = -1;
-    uint64_t faa_result = txnMng->faa_remote_content(yield,g_node_id,(char *)row - rdma_global_buffer,faa_num,cor_id);
+    uint64_t faa_result = 0;
+    txnMng->faa_remote_content(yield,g_node_id,(char *)row - rdma_global_buffer,faa_num,cor_id);
 
     //release range lock(IX)
     faa_num = (-1)<<32;
-    // faa_result = txnMng->faa_remote_content(yield,g_node_id,leaf_offset,faa_num,cor_id);
+    faa_result = txnMng->faa_remote_content(yield,g_node_id,leaf_offset,faa_num,cor_id);
     // printf("[rdma_opt_no_wait3.cpp:23]release lock on key = %ld,lock = %ld,%ld,%ld,%ld\n",row->get_primary_key(),txnMng->decode_is_lock(row->_tid_word),txnMng->decode_ix_lock(row->_tid_word),txnMng->decode_s_lock(row->_tid_word),txnMng->decode_x_lock(row->_tid_word));
 
 }
@@ -39,23 +40,23 @@ void RDMA_opt_no_wait3::remote_write_and_unlock(yield_func_t &yield,RC rc, TxnMa
     
     //release data lock(X)
     uint64_t faa_num = -1;
-    // uint64_t faa_result = txnMng->faa_remote_content(yield,loc,off,faa_num,cor_id);
+    uint64_t faa_result = txnMng->faa_remote_content(yield,loc,off,faa_num,cor_id);
 
     //release range lock(IX)
     uint64_t leaf_offset = access->leaf_offset;
     faa_num = (-1)<<32;
-    // faa_result = txnMng->faa_remote_content(yield,loc,leaf_offset,faa_num,cor_id);
+    faa_result = txnMng->faa_remote_content(yield,loc,leaf_offset,faa_num,cor_id);
 
 }
 
 void RDMA_opt_no_wait3::unlock_read(yield_func_t &yield, RC rc, row_t * row , TxnManager * txnMng, uint64_t leaf_offset, uint64_t cor_id){
     // unlock data lock(S)
     uint64_t faa_num = (-1)<<16;
-    // uint64_t faa_result = txnMng->faa_remote_content(yield,g_node_id,(char *)row - rdma_global_buffer,faa_num,cor_id);
+    uint64_t faa_result = txnMng->faa_remote_content(yield,g_node_id,(char *)row - rdma_global_buffer,faa_num,cor_id);
 
     // unlock range lock(IS)
     faa_num = (-1)<<48;
-    // faa_result = txnMng->faa_remote_content(yield,g_node_id,leaf_offset,faa_num,cor_id);
+    faa_result = txnMng->faa_remote_content(yield,g_node_id,leaf_offset,faa_num,cor_id);
 
 }
 
@@ -67,19 +68,19 @@ void RDMA_opt_no_wait3::remote_unlock_read(yield_func_t &yield, RC rc, TxnManage
     uint64_t leaf_offset = access->leaf_offset;
 
      // unlock data lock(S)
-    // uint64_t faa_num = (-1)<<16;
-    // uint64_t faa_result = txnMng->faa_remote_content(yield,loc,off,faa_num,cor_id);
+    uint64_t faa_num = (-1)<<16;
+    uint64_t faa_result = txnMng->faa_remote_content(yield,loc,off,faa_num,cor_id);
 
     // unlock range lock(IS)
-    // faa_num = (-1)<<48;
-    // faa_result = txnMng->faa_remote_content(yield,loc,leaf_offset,faa_num,cor_id);
+    faa_num = (-1)<<48;
+    faa_result = txnMng->faa_remote_content(yield,loc,leaf_offset,faa_num,cor_id);
 }
 
 void RDMA_opt_no_wait3::unlock_range_read(yield_func_t &yield, uint64_t cor_id,TxnManager * txnMng ,uint64_t remote_server, uint64_t range_offset){
     //0x00S0
-    // uint64_t faa_num = (uint64_t)((-1)<<16);
-    // faa_num = faa_num*(-1);
-    // uint64_t faa_result = txnMng->faa_remote_content(yield,remote_server,range_offset,faa_num,cor_id);
+    uint64_t faa_num = (uint64_t)((-1)<<16);
+    faa_num = faa_num*(-1);
+    uint64_t faa_result = txnMng->faa_remote_content(yield,remote_server,range_offset,faa_num,cor_id);
     // if(txnMng->decode_x_lock(faa_result)!=0){
     //     printf("[rdma_opt_no_wait3.cpp:84]faa_result=%ld,IS=%ld,IX=%ld,S=%ld,X=%ld\n",faa_result,txnMng->decode_is_lock(faa_result),txnMng->decode_ix_lock(faa_result),txnMng->decode_s_lock(faa_result),txnMng->decode_x_lock(faa_result));
     // }
@@ -95,6 +96,7 @@ void RDMA_opt_no_wait3::unlock_range_read(yield_func_t &yield, uint64_t cor_id,T
 
 //write back and unlock
 void RDMA_opt_no_wait3::finish(yield_func_t &yield, RC rc, TxnManager * txnMng, uint64_t cor_id){
+ 
 	Transaction *txn = txnMng->txn;
     uint64_t starttime = get_sys_clock();
 	int read_set[txn->row_cnt - txn->write_cnt];
@@ -106,7 +108,6 @@ void RDMA_opt_no_wait3::finish(yield_func_t &yield, RC rc, TxnManager * txnMng, 
 		else
 			read_set[cur_rd_idx ++] = rid;
 	}
-
 	YCSBQuery* ycsb_query = (YCSBQuery*) (txnMng->query);
     if(ycsb_query->query_type == YCSB_CONTINUOUS){
         int range_count = txn->locked_range_num;
@@ -143,7 +144,6 @@ void RDMA_opt_no_wait3::finish(yield_func_t &yield, RC rc, TxnManager * txnMng, 
             }
         }
     }    
-
 
     uint64_t timespan = get_sys_clock() - starttime;
     txnMng->txn_stats.cc_time += timespan;

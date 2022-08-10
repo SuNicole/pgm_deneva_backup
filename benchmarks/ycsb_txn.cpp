@@ -139,13 +139,14 @@ RC YCSBTxnManager::run_txn(yield_func_t &yield, uint64_t cor_id) {
 	YCSBQuery* ycsb_query = (YCSBQuery*) query;
     if(ycsb_query->query_type == YCSB_CONTINUOUS){
         if(rdma_one_side()){
+            // if((get_sys_clock() - simulation->run_starttime) >= g_warmup_timer)printf("[ycsb_txn.cpp:144]continuous txn\n");
             rc = run_continuous_txn(yield,cor_id);
         }else{
-            // printf("[ycsb_txn.cpp:144]continuous txn\n");
+            // if((get_sys_clock() - simulation->run_starttime) >= g_warmup_timer)printf("[ycsb_txn.cpp:144]continuous txn\n");
             rc = tcp_run_continuous_txn(yield,cor_id);//只有本地范围查询事务有该操作
         }
     }else{
-            printf("[ycsb_txn.cpp:148]normal txn\n");
+        // if((get_sys_clock() - simulation->run_starttime) >= g_warmup_timer)printf("[ycsb_txn.cpp:148]normal txn\n");
         while(rc == RCOK && !is_done()) {
             rc = run_txn_state(yield, cor_id);
         }
@@ -209,8 +210,10 @@ RC YCSBTxnManager::run_txn(yield_func_t &yield, uint64_t cor_id) {
 #elif CC_ALG == RDMA_OPT_NO_WAIT3
      if(ycsb_query->query_type == YCSB_CONTINUOUS){
         if(rc == Abort){
+            // printf("[ycsb_txn.cpp:212]continuous abort\n");
             rc = abort(yield, cor_id);
         }else if(rc == RCOK){
+            // if((get_sys_clock() - simulation->run_starttime) >= g_warmup_timer)printf("[ycsb_txn.cpp:215]continuous commit\n");
             rc = start_commit(yield, cor_id);
         }
      }else{
@@ -419,6 +422,10 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
     rdma_bt_node * left_range_index_node;
     for(int i = 0;i < g_node_cnt;i++){
         uint64_t range_first_key = req->key;
+
+        // int64_t start_offset = (i - remote_server + g_node_cnt) % g_node_cnt;
+        // range_first_key = start_offset + range_first_key;
+
         if(i >= remote_server)range_first_key = range_first_key + (i - remote_server);
         else{
             range_first_key = range_first_key+ (i - remote_server);
@@ -434,9 +441,9 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
             assert(left_range_index_node->keys[0] <= range_first_key);
 
             if(s_lock_content(left_range_index_node->intent_lock)){
-                // printf("[ycsb_txn.cpp:437]\n");
-                printf("[ycsb_txn.cpp:438]intent_lock=%ld,IS=%ld,IX=%ld,S=%ld,X=%ld\n",left_range_index_node->intent_lock,decode_is_lock(left_range_index_node->intent_lock),decode_ix_lock(left_range_index_node->intent_lock),decode_s_lock(left_range_index_node->intent_lock),decode_x_lock(left_range_index_node->intent_lock));
-                printf("[ycsb_txn.cpp:439]num_key=%ld,[0]=%ld,[num]=%ld,req->key=%ld\n",left_range_index_node->num_keys,left_range_index_node->keys[0],left_range_index_node->keys[left_range_index_node->num_keys-1],req->key);
+                printf("[ycsb_txn.cpp:437]\n");
+                // printf("[ycsb_txn.cpp:438]intent_lock=%ld,IS=%ld,IX=%ld,S=%ld,X=%ld\n",left_range_index_node->intent_lock,decode_is_lock(left_range_index_node->intent_lock),decode_ix_lock(left_range_index_node->intent_lock),decode_s_lock(left_range_index_node->intent_lock),decode_x_lock(left_range_index_node->intent_lock));
+                // printf("[ycsb_txn.cpp:439]num_key=%ld,[0]=%ld,[num]=%ld,req->key=%ld\n",left_range_index_node->num_keys,left_range_index_node->keys[0],left_range_index_node->keys[left_range_index_node->num_keys-1],req->key);
                 return Abort;
             }
 
@@ -446,23 +453,21 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
 
             uint64_t add_value = 1;
             add_value = add_value<<16;//0x0010
-            add_value = 0;
             uint64_t before_faa = 0;
-            //before_faa = faa_remote_content(yield,i,left_range_node_offset,add_value,cor_id);
+            before_faa = faa_remote_content(yield,i,left_range_node_offset,add_value,cor_id);
 
-            rdma_bt_node * remote_bt_node = read_remote_bt_node(yield,i,left_range_node_offset,cor_id);
-            uint64_t tmp_intent = remote_bt_node->intent_lock;
-            if(decode_x_lock(tmp_intent)!=0){
-                printf("[ycsb_txn.cpp:452]origin=%ld,before_faa=%ld,intent=%ld,IS=%ld,IX=%ld,s=%ld,x=%ld,faa_value=%ld\n",origin_bt_node->intent_lock,before_faa,tmp_intent,decode_is_lock(tmp_intent),decode_ix_lock(tmp_intent),decode_s_lock(tmp_intent),decode_x_lock(tmp_intent),add_value);
-            }
+            // rdma_bt_node * remote_bt_node = read_remote_bt_node(yield,i,left_range_node_offset,cor_id);
+            // uint64_t tmp_intent = remote_bt_node->intent_lock;
+            // if(decode_x_lock(tmp_intent) !=0 ){
+            //     // printf("[ycsb_txn.cpp:452]origin=%ld,before_faa=%ld,intent=%ld,IS=%ld,IX=%ld,s=%ld,x=%ld,faa_value=%ld\n",origin_bt_node->intent_lock,before_faa,tmp_intent,decode_is_lock(tmp_intent),decode_ix_lock(tmp_intent),decode_s_lock(tmp_intent),decode_x_lock(tmp_intent),add_value);
+            // }
 
 
             if(s_lock_content(before_faa)){
                 add_value = -1;
                 add_value = add_value<<16;//0x0010
-                add_value = 0;
-                // before_faa = faa_remote_content(yield,i,left_range_node_offset,add_value,cor_id);
-                printf("[ycsb_txn.cpp:449]\n");
+                before_faa = faa_remote_content(yield,i,left_range_node_offset,add_value,cor_id);
+                printf("[ycsb_txn.cpp:467]\n");
                 return Abort;
             }
 
@@ -494,22 +499,20 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
                 assert(next_index_node->keys[0] > range_first_key);
 
                 if(s_lock_content(next_index_node->intent_lock)){
-                    printf("[ycsb_txn.cpp:483]\n");
+                    printf("[ycsb_txn.cpp:499]\n");
                     return Abort;
                 }
 
                 //acquire S lock on range
                 uint64_t add_value = 1;
                 add_value = add_value<<16;//0x0010
-                add_value = 0;
-                // uint64_t before_faa = faa_remote_content(yield,i,remote_offset,add_value,cor_id);
+                uint64_t before_faa = faa_remote_content(yield,i,remote_offset,add_value,cor_id);
 
                 if(s_lock_content(next_index_node->intent_lock)){
                     add_value = -1;
                     add_value = add_value<<16;//0x0010
-                    add_value = 0;
-                    // before_faa = faa_remote_content(yield,i,remote_offset,add_value,cor_id);
-                    printf("[ycsb_txn.cpp:492]\n");
+                    before_faa = faa_remote_content(yield,i,remote_offset,add_value,cor_id);
+                    printf("[ycsb_txn.cpp:512]\n");
                     return Abort;
                 }
 
@@ -530,8 +533,10 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
                 }
                 
             }
+            
         }else{
-        
+            // printf("[ycsb_txn.cpp:539]in run_continuous_txn\n");
+            // continue;
             //TODO local txn
             // printf("[ycsb_txn.cpp:509]req->key = %ld , first_key = %ld\n",req->key,range_first_key);
             rdma_bt_node * leaf_node;
@@ -543,22 +548,20 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
             while(leaf_node && num_of_key != 0){
                 if(leaf_node->keys[0] > last_key || leaf_node->keys[num_of_key - 1] < first_key)break;
                 if(s_lock_content(leaf_node->intent_lock)){
-                    printf("[ycsb_txn.cpp:523]\n");
+                    printf("[ycsb_txn.cpp:547]\n");
                     return Abort;
                 }
                 //range lock(S)
                 uint64_t add_value = 1;
                 add_value = add_value<<16;//0x0010
-                add_value = 0;
                 uint64_t local_offset = (char*)leaf_node - rdma_global_buffer;
                 uint64_t before_faa = 0;
-                // uint64_t before_faa = faa_remote_content(yield,i,local_offset,add_value,cor_id);
+                before_faa = faa_remote_content(yield,i,local_offset,add_value,cor_id);
 
                 if(s_lock_content(before_faa)){
                     add_value = -1;
                     add_value = add_value<<16;//0x0010
-                    add_value = 0;
-                    // before_faa = faa_remote_content(yield,i,local_offset,add_value,cor_id);
+                    before_faa = faa_remote_content(yield,i,local_offset,add_value,cor_id);
                     printf("[ycsb_txn.cpp:534]\n");
                     return Abort;
                 }
@@ -583,7 +586,7 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
                 leaf_node = (rdma_bt_node*)(rdma_global_buffer + leaf_node->next_node_offset);
                 num_of_key = leaf_node->num_keys;
             }
-            
+            // printf("[ycsb_txn.cpp:590]out run_continuous_txn\n");
         }
     }
 

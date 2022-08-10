@@ -10,6 +10,7 @@ input.txt
 *.out
 0results*
 1results*
+2results*
 lat*
 scripts/lat-*
 scripts/tmp*

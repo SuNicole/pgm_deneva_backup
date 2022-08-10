@@ -75,10 +75,10 @@
 // Message Passing
 /***********************************************/
 #define TPORT_TYPE tcp
-#define TPORT_PORT 7000
+#define TPORT_PORT 3000
 #define SET_AFFINITY true
 #define TPORT_TYPE tcp
-#define TPORT_PORT 7000
+#define TPORT_PORT 3000
 #define SET_AFFINITY true
 
 #define MAX_TPORT_NAME 128

@@ -567,6 +567,7 @@ RC TxnManager::commit_continuous(yield_func_t &yield, uint64_t cor_id) {
         if(txn->locked_node[i]->server_id == g_node_id){
             bt_node * leaf_node =(bt_node*)(txn->locked_node[i]->bt_node_location);
             uint64_t faa_num = (-1)<<16;
+			printf("commit_continuous\n");
             uint64_t faa_result = ATOM_FETCH_ADD(leaf_node->intent_lock,faa_num);
         }
     }
@@ -579,6 +580,7 @@ RC TxnManager::abort_continuous(yield_func_t &yield, uint64_t cor_id) {
         if(txn->locked_node[i]->server_id == g_node_id){
             bt_node * leaf_node =(bt_node*)(txn->locked_node[i]->bt_node_location);
             uint64_t faa_num = (-1)<<16;
+			printf("abort_continuous\n");
             uint64_t faa_result = ATOM_FETCH_ADD(leaf_node->intent_lock,faa_num);
         }
     }
@@ -1356,51 +1358,6 @@ void TxnManager::cleanup(yield_func_t &yield, RC rc, uint64_t cor_id) {
     }
     
 #endif
-#if 0 && USE_DBPAOR == true && CC_ALG == RDMA_TS1 
-	starttime = get_sys_clock();
-	uint64_t endtime;
-    for(int i=0;i<g_node_cnt;i++){ //for the same node, batch unlock remote
-        if(remote_access[i].size() > 0){
-            batch_unlock_remote(yield, cor_id, i, Abort, this, remote_access);
-        }
-    }
-    for(int i=0;i<g_node_cnt;i++){ //poll result
-        if(remote_access[i].size() > 0){
-        	//to do: add coroutine
-		INC_STATS(get_thd_id(), worker_oneside_cnt, 1);
-	#if USE_COROUTINE
-			uint64_t waitcomp_time;
-			std::pair<int,ibv_wc> dbres1;
-			INC_STATS(get_thd_id(), worker_process_time, get_sys_clock() - h_thd->cor_process_starttime[cor_id]);
-			
-			do {
-				h_thd->start_wait_time = get_sys_clock();
-				h_thd->last_yield_time = get_sys_clock();
-				// printf("do\n");
-				yield(h_thd->_routines[((cor_id) % COROUTINE_CNT) + 1]);
-				uint64_t yield_endtime = get_sys_clock();
-				INC_STATS(get_thd_id(), worker_yield_cnt, 1);
-				INC_STATS(get_thd_id(), worker_yield_time, yield_endtime - h_thd->last_yield_time);
-				INC_STATS(get_thd_id(), worker_idle_time, yield_endtime - h_thd->last_yield_time);
-				dbres1 = rc_qp[i][get_thd_id() + cor_id * g_total_thread_cnt]->poll_send_comp();
-				waitcomp_time = get_sys_clock();
-				
-				INC_STATS(get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);
-				INC_STATS(get_thd_id(), worker_waitcomp_time, waitcomp_time - yield_endtime);
-			} while (dbres1.first == 0);
-			h_thd->cor_process_starttime[cor_id] = get_sys_clock();
-			// RDMA_ASSERT(res_p == rdmaio::IOCode::Ok);
-	#else
-            auto dbres1 = rc_qp[i][get_thd_id() + cor_id * g_total_thread_cnt]->wait_one_comp();
-            RDMA_ASSERT(dbres1 == IOCode::Ok);
-			endtime = get_sys_clock();
-			INC_STATS(get_thd_id(), worker_waitcomp_time, endtime-starttime);
-			INC_STATS(get_thd_id(), worker_idle_time, endtime-starttime);
-			DEL_STATS(get_thd_id(), worker_process_time, endtime-starttime);
-	#endif    
-        }
-    }
-#endif 
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
     r2pl_man.finish(yield,rc,this,cor_id);
 #endif
@@ -3847,10 +3804,13 @@ write_wait_here:
         uint64_t range_lock = m_item->range_lock;
         if(((range_lock<<48)>>48) > 0)return Abort;//no X lock
         uint64_t faa_num = 1<<48;
-        uint64_t faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+        uint64_t faa_result = 0;
+		faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
         if(((faa_result<<48)>>48) > 0){
             faa_num = (-1)<<48;
-            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            faa_result = 0;
+			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            printf("[txn.cpp:3813]\n");
             return Abort;
         }
 
@@ -3859,12 +3819,15 @@ write_wait_here:
         uint64_t data_lock = test_row->_tid_word;
         if(s_lock_content(data_lock)){
             faa_num = (-1)<<48;
-            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            faa_result = 0;
+			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            printf("[txn.cpp:3824]\n");
             return Abort;
         }
 
         faa_num = 1<<16;
-        faa_result = faa_remote_content(yield,loc,m_item->offset,faa_num,cor_id);
+        faa_result = 0;
+		faa_remote_content(yield,loc,m_item->offset,faa_num,cor_id);
         //TODO - check
 
 		test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
@@ -3880,10 +3843,13 @@ write_wait_here:
         uint64_t range_lock = m_item->range_lock;
         if(ix_lock_content(range_lock))return Abort;
         uint64_t faa_num = 1<<32;
-        uint64_t faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+        uint64_t faa_result = 0;
+		faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
         if(ix_lock_content(faa_result)){
             faa_num = (-1)<<32;
-            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            faa_result = 0;
+			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            printf("[txn.cpp:3852]\n");
             return Abort;
         }
 
@@ -3892,15 +3858,20 @@ write_wait_here:
         uint64_t data_lock = test_row->_tid_word;
         if(data_lock != 0){
             faa_num = (-1)<<48;
-            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            faa_result = 0;
+            printf("[txn.cpp:3862]\n");
+			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
             return Abort;
         }
 
         uint64_t try_lock = -1;
-        try_lock = cas_remote_content(yield,loc,m_item->offset,0,1,cor_id);
+        try_lock = 0;
+		cas_remote_content(yield,loc,m_item->offset,0,1,cor_id);
         if(try_lock != 0){
             faa_num = (-1)<<48;
-            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            faa_result = 0;
+			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            printf("[txn.cpp:3874]\n");
             return Abort;
         }
         int tmp = txn->locked_range_num;
@@ -4919,7 +4890,7 @@ rdma_bt_node * TxnManager::read_remote_bt_node(yield_func_t &yield, uint64_t tar
     uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
     char *test_buf = Rdma::get_index_client_memory(thd_id);
     memset(test_buf, 0, operate_size);
-   
+    // assert((rdma_bt_node*)test_buf->intent_lock == 0);
     uint64_t starttime;
 	uint64_t endtime;
 	starttime = get_sys_clock();
@@ -4969,6 +4940,7 @@ rdma_bt_node * TxnManager::read_remote_bt_node(yield_func_t &yield, uint64_t tar
         remote_node->child_offsets[i] = ((rdma_bt_node*)test_buf)->child_offsets[i];
         remote_node->keys[i] = ((rdma_bt_node*)test_buf)->keys[i];
     }
+    remote_node->intent_lock = ((rdma_bt_node*)test_buf)->intent_lock;
     remote_node->num_keys = ((rdma_bt_node*)test_buf)->num_keys;
     remote_node->parent_offset = ((rdma_bt_node*)test_buf)->parent_offset;
     remote_node->next_node_offset = ((rdma_bt_node*)test_buf)->next_node_offset;

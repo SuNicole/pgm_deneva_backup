@@ -25,15 +25,15 @@ RC Row_rdma_opt_no_wait3::lock_get(yield_func_t &yield, access_t type, TxnManage
 			INC_STATS(txn->get_thd_id(), is_content_abort, 1);
             return Abort;
         }
-            //acquire is lock
+        //acquire is lock
         uint64_t faa_num = 1<<48;
         uint64_t faa_result = 0;
-        // txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
+        txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
 
         if(txn->is_lock_content(faa_result)){
 			INC_STATS(txn->get_thd_id(), is_content_abort2, 1);
             faa_num = (-1)<<48;
-            // faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
+            faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
             return Abort;
         }
 
@@ -43,17 +43,17 @@ RC Row_rdma_opt_no_wait3::lock_get(yield_func_t &yield, access_t type, TxnManage
         if(txn->s_lock_content(intent_lock)){
 			INC_STATS(txn->get_thd_id(), s_content_abort, 1);
             faa_num = (-1)<<48;
-            // faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
+            faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
             return Abort;
         }
         faa_num = 1<<16;
-        // faa_result = txn->faa_remote_content(yield,g_node_id,row_offset,faa_num,cor_id);
+        faa_result = txn->faa_remote_content(yield,g_node_id,row_offset,faa_num,cor_id);
         if(txn->s_lock_content(faa_result)){
 			INC_STATS(txn->get_thd_id(), s_content_abort, 1);
             faa_num = (-1)<<48;
-            // faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
+            faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
             faa_num = (-1)<<16;
-            // faa_result = txn->faa_remote_content(yield,g_node_id,row_offset,faa_num,cor_id);
+            faa_result = txn->faa_remote_content(yield,g_node_id,row_offset,faa_num,cor_id);
             return Abort;
         }
 
@@ -72,12 +72,12 @@ RC Row_rdma_opt_no_wait3::lock_get(yield_func_t &yield, access_t type, TxnManage
 
         uint64_t faa_num = 1<<32;
         uint64_t faa_result = 0;
-        // txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
+        txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
 
         if(txn->ix_lock_content(faa_result)){
 			INC_STATS(txn->get_thd_id(), ix_content_abort, 1);
             faa_num = (-1)<<32;
-            // faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
+            faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
             return Abort;
         }
         //lock data(X)
@@ -86,17 +86,17 @@ RC Row_rdma_opt_no_wait3::lock_get(yield_func_t &yield, access_t type, TxnManage
         if(txn->x_lock_content(intent_lock)){
 			INC_STATS(txn->get_thd_id(), x_content_abort, 1);
             faa_num = (-1)<<32;
-            // faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
+            faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
             return Abort;
         }
         faa_num = 1;
-        // faa_result = txn->faa_remote_content(yield,g_node_id,row_offset,faa_num,cor_id);
+        faa_result = txn->faa_remote_content(yield,g_node_id,row_offset,faa_num,cor_id);
         if(txn->x_lock_content(faa_result)){
 			INC_STATS(txn->get_thd_id(), x_content_abort, 1);
             faa_num = (-1)<<32;
-            // faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
+            faa_result = txn->faa_remote_content(yield,g_node_id,leaf_node_offset,faa_num,cor_id);
             faa_num = -1;
-            // faa_result = txn->faa_remote_content(yield,g_node_id,row_offset,faa_num,cor_id);
+            faa_result = txn->faa_remote_content(yield,g_node_id,row_offset,faa_num,cor_id);
             return Abort;
         }
         // printf("[row_rdma_opt_no_wait3.cpp:98]lock on key = %ld,lock = %ld,%ld,%ld,%ld\n",row->get_primary_key(),txn->decode_is_lock(row->_tid_word),txn->decode_ix_lock(row->_tid_word),txn->decode_s_lock(row->_tid_word),txn->decode_x_lock(row->_tid_word));

@@ -59,6 +59,11 @@
   #define USE_COROUTINE true
   #define USE_DBPAOR true
 #endif
+
+/******MIX WORKLOAD********/
+#define MIX_WORKLOAD 1
+#define CONTINUOUS_TXN_PERC 0.1
+
 /************RDMA TYPE**************/
 #define CHANGE_TCP_ONLY 0
 #define CHANGE_MSG_QUEUE 1
@@ -92,7 +97,7 @@
 #define SECOND 200 // Set the queue monitoring time.
 // #define THD_ID_QUEUE
 #define ONE_NODE_RECIEVE 0 // only node 0 will receive the txn query
-#define USE_WORK_NUM_THREAD false
+#define USE_WORK_NUM_THREAD true
 #if 1
 // #define LESS_DIS // Reduce the number of yCSB remote data to 1
 // #define LESS_DIS_NUM 0 // Reduce the number of yCSB remote data to 1
@@ -112,13 +117,13 @@
 /***********************************************/
 // Simulation + Hardware
 /***********************************************/
-#define NODE_CNT 4
-#define THREAD_CNT 24
+#define NODE_CNT 2
+#define THREAD_CNT 8
 #define REM_THREAD_CNT 1
 #define SEND_THREAD_CNT 1
 #define COROUTINE_CNT 4
 
-#if ALL_ES_LOCK || ((CC_ALG != RDMA_OPT_NO_WAIT) && (CC_ALG != RDMA_OPT_WAIT_DIE))
+#if ALL_ES_LOCK || ((CC_ALG != RDMA_OPT_NO_WAIT) && (CC_ALG != RDMA_OPT_NO_WAIT2) && (CC_ALG != RDMA_OPT_WAIT_DIE))
 #define HOT_THREAD_CNT 0
 #else
 #define HOT_THREAD_CNT 1
@@ -160,7 +165,7 @@
 #define TIME_ENABLE         true //STATS_ENABLE
 
 #define FIN_BY_TIME true
-#define MAX_TXN_IN_FLIGHT 20000
+#define MAX_TXN_IN_FLIGHT 10000
 
 #define SERVER_GENERATE_QUERIES true
 
@@ -190,8 +195,8 @@
 /***********************************************/
 #define TPORT_TYPE tcp
 #define TPORT_PORT 7000
-#define TPORT_TWOSIDE_PORT 15000
-#define RDMA_TPORT 9214
+#define TPORT_TWOSIDE_PORT 7100
+#define RDMA_TPORT 7500
 #define SET_AFFINITY true
 
 #define MAX_TPORT_NAME 128
@@ -215,26 +220,26 @@
 
 // WAIT_DIE, NO_WAIT, DL_DETECT, TIMESTAMP, MVCC, HSTORE, OCC, VLL, RDMA_SILO, RDMA_NO_WAIT, RDMA_NO_WAIT2, RDMA_WAIT_DIE2,RDMA_TS1,RDMA_SILO,RDMA_MVCC,RDMA_MAAT,RDMA_CICADA
 //RDMA_NO_WAIT2, RDMA_WAIT_DIE2:no matter read or write, mutex lock is used 
-//RDMA_OPT_NO_WAIT, RDMA_OPT_WAIT_DIE,RDMA_BAMBOO_NO_WAIT
+//RDMA_OPT_NO_WAIT,RDMA_OPT_NO_WAIT2, RDMA_OPT_WAIT_DIE,RDMA_BAMBOO_NO_WAIT
 #define ISOLATION_LEVEL SERIALIZABLE
 
-#define CC_ALG RDMA_MVCC
+#define CC_ALG RDMA_OPT_NO_WAIT3
 
 #define YCSB_ABORT_MODE false
 #define QUEUE_C  APACITY_NEW 1000000
 
 #define DEBUG_PRINTF false
-#define ALL_ES_LOCK true
+#define ALL_ES_LOCK false
 
 #if RDMA_ONE_SIDE 
-#define BATCH_FAA true
+#define BATCH_FAA false
 #define BATCH_INDEX_AND_READ false //keep this "false", a fail test for SILO
 #endif
 
 /***********************************************/
 // USE RDMA
 /**********************************************/
-#if (CC_ALG == RDMA_MAAT || CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_TS1 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_MOCC || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_BAMBOO_NO_WAIT || RDMA_TWO_SIDE == true) && RDMA_SIT != 0
+#if (CC_ALG == RDMA_MAAT || CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_TS1 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_MOCC || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT3 || RDMA_TWO_SIDE == true) && RDMA_SIT != 0
 // #define USE_RDMA CHANGE_MSG_QUEUE
 #define USE_RDMA CHANGE_TCP_ONLY
 #endif
@@ -283,9 +288,11 @@
 #define CENTRAL_MANAGER       false
 //#ifdef USE_RDMA
 #if RDMA_ONE_SIDE == true
-#define INDEX_STRUCT        IDX_RDMA
+// #define INDEX_STRUCT        IDX_RDMA
+#define INDEX_STRUCT        IDX_RDMA_BTREE
 #else
-#define INDEX_STRUCT        IDX_HASH
+// #define INDEX_STRUCT        IDX_HASH
+#define INDEX_STRUCT        IDX_BTREE
 #endif
 #define BTREE_ORDER         16
 
@@ -364,10 +371,10 @@
 #define DATA_PERC 100
 #define ACCESS_PERC 0.03
 #define INIT_PARALLELISM 1
-#define SYNTH_TABLE_SIZE 41943040
-#define ZIPF_THETA 0.95
-#define TXN_WRITE_PERC 0.2
-#define TUP_WRITE_PERC 0.2
+#define SYNTH_TABLE_SIZE 71072
+#define ZIPF_THETA 0.2
+#define TXN_WRITE_PERC 1
+#define TUP_WRITE_PERC 1
 #define SCAN_PERC           0
 #define SCAN_LEN          20
 #define PART_PER_TXN 2
@@ -511,6 +518,7 @@ enum PPSTxnType {
 #define IDX_HASH          1
 #define IDX_BTREE         2
 #define IDX_RDMA          3
+#define IDX_RDMA_BTREE    4
 // WORKLOAD
 #define YCSB            1
 #define TPCC            2
@@ -567,6 +575,11 @@ enum PPSTxnType {
 #define RDMA_OPT_WAIT_DIE 47
 #define RDMA_BAMBOO_NO_WAIT 48
 #define RDMA_TS 49
+#define RDMA_OPT_NO_WAIT2 50
+#define RDMA_OPT_NO_WAIT3 51 //intent lock are used
+#define OPT_NO_WAIT3 52
+
+#define HOT_THRESHOLD 350
 // TIMESTAMP allocation method.
 #define TS_MUTEX          1
 #define TS_CAS            2
