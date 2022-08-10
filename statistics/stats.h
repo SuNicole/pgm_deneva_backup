@@ -111,6 +111,28 @@ public:
   uint64_t overflow_abort;
   uint64_t process_overflow;
 
+  //opt_2pl
+  uint64_t opt_no_wait_abort1;
+  uint64_t opt_no_wait_abort2;
+  uint64_t opt_no_wait_abort3;
+  uint64_t opt_no_wait_abort4;
+  uint64_t opt_no_wait_abort5;
+  uint64_t opt_no_wait_abort6;
+  uint64_t opt_no_wait_abort7;
+  uint64_t opt_no_wait_abort8;
+
+  uint64_t no_wait_abort1;
+  uint64_t no_wait_abort2;
+  uint64_t no_wait_abort3;
+  uint64_t no_wait_abort4;
+  uint64_t no_wait_abort5;
+
+  uint64_t s_content_abort;
+  uint64_t is_content_abort;
+  uint64_t is_content_abort2;
+  uint64_t x_content_abort;
+  uint64_t ix_content_abort;
+
   // Transaction stats
   double txn_total_process_time;
   double txn_process_time;

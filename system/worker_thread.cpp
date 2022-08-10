@@ -46,6 +46,7 @@
 #include "index_hash.h"
 #include "index_btree.h"
 #include "index_rdma.h"
+#include "index_rdma_btree.h"
 #include "ycsb.h"
 #include "tpcc.h"
 #include "da.h"
@@ -175,12 +176,12 @@ void WorkerThread::statqueue(uint64_t thd_id, Message * msg, uint64_t starttime)
   if (msg->rtype == RTXN_CONT ||
       msg->rtype == RQRY_RSP || msg->rtype == RACK_PREP  ||
       msg->rtype == RACK_FIN || msg->rtype == RTXN  ||
-      msg->rtype == CL_RSP) {
+      msg->rtype == CL_RSP || msg->rtype == CRQRY_RSP || msg->rtype == RACK_CFIN) {
     uint64_t queue_time = get_sys_clock() - starttime;
 		INC_STATS(thd_id,trans_local_process,queue_time);
   } else if (msg->rtype == RQRY || msg->rtype == RQRY_CONT ||
              msg->rtype == RFIN || msg->rtype == RPREPARE ||
-             msg->rtype == RFWD){
+             msg->rtype == RFWD || msg->rtype == CRQRY || msg->rtype == CRFIN){
     uint64_t queue_time = get_sys_clock() - starttime;
 		INC_STATS(thd_id,trans_remote_process,queue_time);
   } else if (msg->rtype == CL_QRY || msg->rtype == CL_QRY_O) {
@@ -210,15 +211,24 @@ void WorkerThread::process(yield_func_t &yield, Message * msg, uint64_t cor_id) 
 				break;
 			case RQRY:
         rc = process_rqry(yield, msg, cor_id);
+                break;
+            case CRQRY:
+        rc = process_crqry(yield, msg, cor_id);
 				break;
 			case RQRY_CONT:
         rc = process_rqry_cont(yield, msg, cor_id);
 				break;
 			case RQRY_RSP:
         rc = process_rqry_rsp(yield, msg, cor_id);
+                break;
+            case CRQRY_RSP:
+        rc = process_crqry_rsp(yield, msg, cor_id);
 				break;
 			case RFIN:
         rc = process_rfin(yield, msg, cor_id);
+                break;
+            case CRFIN:
+        rc = process_crfin(yield, msg, cor_id);
 				break;
 			case RACK_PREP:
         rc = process_rack_prep(yield, msg, cor_id);
@@ -226,6 +236,9 @@ void WorkerThread::process(yield_func_t &yield, Message * msg, uint64_t cor_id) 
 			case RACK_FIN:
         rc = process_rack_rfin(msg);
 				break;
+            case RACK_CFIN:
+        rc = process_rack_crfin(msg);
+                break;
 			case RTXN_CONT:
         rc = process_rtxn_cont(yield, msg, cor_id);
 				break;
@@ -758,6 +771,7 @@ RC WorkerThread::run(yield_func_t &yield, uint64_t cor_id) {
 
     if((msg->rtype != CL_QRY && msg->rtype != CL_QRY_O) || CC_ALG == CALVIN || CC_ALG == RDMA_CALVIN) {
       txn_man = get_transaction_manager(msg);
+      assert(txn_man != NULL);
 
       if ((CC_ALG != CALVIN && CC_ALG != RDMA_CALVIN) && IS_LOCAL(txn_man->get_txn_id())) {
         if (msg->rtype != RTXN_CONT &&
@@ -865,6 +879,33 @@ RC WorkerThread::process_rfin(yield_func_t &yield, Message * msg, uint64_t cor_i
     tport_man.rdma_thd_send_msg(get_thd_id(), GET_NODE_ID(msg->get_txn_id()), Message::create_message(txn_man, RACK_FIN));
 #else
     msg_queue.enqueue(get_thd_id(), Message::create_message(txn_man, RACK_FIN),
+                      GET_NODE_ID(msg->get_txn_id()));
+#endif
+  release_txn_man();
+
+  return RCOK;
+}
+
+RC WorkerThread::process_crfin(yield_func_t &yield, Message * msg, uint64_t cor_id) {
+//接到通知事务完成的消息，本地提交或回滚
+  if(((FinishMessage*)msg)->rc == Abort) {
+    txn_man->abort_continuous(yield, cor_id);
+    txn_man->reset();
+    txn_man->reset_query();
+#if USE_RDMA == CHANGE_MSG_QUEUE
+    tport_man.rdma_thd_send_msg(get_thd_id(), GET_NODE_ID(msg->get_txn_id()), Message::create_message(txn_man, RACK_CFIN));
+#else
+    msg_queue.enqueue(get_thd_id(), Message::create_message(txn_man, RACK_CFIN),
+                      GET_NODE_ID(msg->get_txn_id()));
+#endif
+    return Abort;
+  }
+    txn_man->commit_continuous(yield, cor_id);//本地提交
+    //通知调度节点提交完成
+#if USE_RDMA == CHANGE_MSG_QUEUE
+    tport_man.rdma_thd_send_msg(get_thd_id(), GET_NODE_ID(msg->get_txn_id()), Message::create_message(txn_man, RACK_CFIN));
+#else
+    msg_queue.enqueue(get_thd_id(), Message::create_message(txn_man, RACK_CFIN),
                       GET_NODE_ID(msg->get_txn_id()));
 #endif
   release_txn_man();
@@ -990,6 +1031,23 @@ RC WorkerThread::process_rack_rfin(Message * msg) {
   return rc;
 }
 
+RC WorkerThread::process_rack_crfin(Message * msg) {
+    DEBUG("RFIN_ACK %ld\n",msg->get_txn_id());
+
+    RC rc = RCOK;
+    txn_man->finished_server_count ++;
+    if(txn_man->finished_server_count == g_node_cnt - 1){
+        if(txn_man->get_rc() == RCOK) {
+            commit();
+        }else {
+            abort();
+        }
+    }else{
+        return WAIT;
+    }
+    return rc;
+}
+
 RC WorkerThread::process_rqry_rsp(yield_func_t &yield, Message * msg, uint64_t cor_id) {
   DEBUG("RQRY_RSP %ld\n",msg->get_txn_id());
   assert(IS_LOCAL(msg->get_txn_id()));
@@ -1011,6 +1069,31 @@ RC WorkerThread::process_rqry_rsp(yield_func_t &yield, Message * msg, uint64_t c
   RC rc = txn_man->run_txn(yield, cor_id);
   check_if_done(rc);
   return rc;
+}
+
+RC WorkerThread::process_crqry_rsp(yield_func_t &yield, Message * msg, uint64_t cor_id) {
+  DEBUG("RQRY_RSP %ld\n",msg->get_txn_id());
+  assert(IS_LOCAL(msg->get_txn_id()));
+
+  txn_man->txn_stats.remote_wait_time += get_sys_clock() - txn_man->txn_stats.wait_starttime;
+
+  if(((QueryResponseMessage*)msg)->rc == Abort) {
+//TODO - abort
+    // txn_man->start_abort_continuous(yield, cor_id);
+    txn_man->start_abort(yield, cor_id);
+    return Abort;
+  }
+  txn_man->finished_server_count ++;
+  if( txn_man->finished_server_count >= g_node_cnt - 1){
+    //接到所有节点处理完成的消息，先在本地提交事务，再通知远程提交
+    txn_man->finished_server_count = 0;
+    txn_man->txn_stats.finish_start_time = get_sys_clock();
+    txn_man->start_commit(yield,cor_id);
+    commit();
+    // txn_man->start_commit_continuous(yield,cor_id);
+  }
+  
+  return RCOK;
 }
 
 RC WorkerThread::process_rqry(yield_func_t &yield, Message * msg, uint64_t cor_id) {
@@ -1057,6 +1140,30 @@ RC WorkerThread::process_rqry(yield_func_t &yield, Message * msg, uint64_t cor_i
     msg_queue.enqueue(get_thd_id(),Message::create_message(txn_man,RQRY_RSP),txn_man->return_id);
 #endif
   }
+  return rc;
+}
+
+RC WorkerThread::process_crqry(yield_func_t &yield, Message * msg, uint64_t cor_id) {
+  RC rc = RCOK;
+#if CC_ALG == OPT_NO_WAIT3
+  DEBUG("CRQRY %ld\n",msg->get_txn_id());
+
+  M_ASSERT_V(!IS_LOCAL(msg->get_txn_id()), "CRQRY local: %ld %ld/%d\n", msg->get_txn_id(),
+             msg->get_txn_id() % g_node_cnt, g_node_id);
+  assert(!IS_LOCAL(msg->get_txn_id()));
+
+  msg->copy_to_txn(txn_man);
+
+  txn_man->send_RQRY_RSP = true;
+  rc = txn_man->tcp_local_run_continuous_txn(yield, cor_id);
+
+  // Send response
+#if USE_RDMA == CHANGE_MSG_QUEUE
+    tport_man.rdma_thd_send_msg(get_thd_id(), txn_man->return_id, Message::create_message(txn_man,CRQRY_RSP));
+#else
+    msg_queue.enqueue(get_thd_id(),Message::create_message(txn_man,CRQRY_RSP),txn_man->return_id);
+#endif
+#endif
   return rc;
 }
 
@@ -1623,7 +1730,7 @@ RC WorkerNumThread::run() {
   fflush(stdout);
   return FINISH;
 }
-#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT2
 void HotThread::setup() {
 }
 
@@ -1724,8 +1831,8 @@ RC HotThread::run() {
         itemid_t * item;
 	      index->get_index_by_id(j, item);
         row_t * row = ((row_t *)item->location);
-        if (row->conflict_num >= 350) {row->is_hot = true; row->conflict_num = 0;}
-        else if (row->conflict_num < 350) {row->is_hot = false; row->conflict_num = 0;}
+        if (row->conflict_num >= HOT_THRESHOLD) {row->is_hot = true; row->conflict_num = 0;}
+        else if (row->conflict_num < HOT_THRESHOLD) {row->is_hot = false; row->conflict_num = 0;}
         // if(row->rcnt_pos > 100000000){  //clear if too big
         //   row->rcnt_pos = row->rcnt_pos - row->rcnt_neg;
         //   row->rcnt_neg = 0; 

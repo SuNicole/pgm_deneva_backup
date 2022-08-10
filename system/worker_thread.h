@@ -38,11 +38,15 @@ public:
     TxnManager * get_transaction_manager(Message * msg);
     void calvin_wrapup(yield_func_t &yield, uint64_t cor_id);
     RC process_rfin(yield_func_t &yield, Message * msg, uint64_t cor_id);
+    RC process_crfin(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rfwd(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rack_rfin(Message * msg);
+    RC process_rack_crfin(Message * msg);
     RC process_rack_prep(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rqry_rsp(yield_func_t &yield, Message * msg, uint64_t cor_id);
+    RC process_crqry_rsp(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rqry(yield_func_t &yield, Message * msg, uint64_t cor_id);
+    RC process_crqry(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rqry_cont(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rinit(Message * msg);
     RC process_rprepare(yield_func_t &yield, Message * msg, uint64_t cor_id);
@@ -99,7 +103,7 @@ public:
     void setup();
 
 };
-#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT2
 class HotThread : public Thread {
 public:
     RC run();

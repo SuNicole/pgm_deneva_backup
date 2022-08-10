@@ -431,12 +431,12 @@ void QWorkQueue::statqueue(uint64_t thd_id, work_queue_entry * entry) {
 	if (msg->rtype == RTXN_CONT ||
 		msg->rtype == RQRY_RSP || msg->rtype == RACK_PREP  ||
 		msg->rtype == RACK_FIN || msg->rtype == RTXN  ||
-		msg->rtype == CL_RSP) {
+		msg->rtype == CL_RSP || msg->rtype == CRQRY_RSP || msg->rtype == RACK_CFIN) {
 		uint64_t queue_time = get_sys_clock() - entry->starttime;
 			INC_STATS(thd_id,trans_work_local_wait,queue_time);
 	} else if (msg->rtype == RQRY || msg->rtype == RQRY_CONT ||
 				msg->rtype == RFIN || msg->rtype == RPREPARE ||
-				msg->rtype == RFWD){
+				msg->rtype == RFWD || msg->rtype == CRQRY || msg->rtype == CRFIN){
 		uint64_t queue_time = get_sys_clock() - entry->starttime;
 		INC_STATS(thd_id,trans_work_remote_wait,queue_time);
 	}else if (msg->rtype == CL_QRY || msg->rtype == CL_QRY_O) {

@@ -47,13 +47,13 @@ void MessageQueue::statqueue(uint64_t thd_id, msg_entry * entry) {
   Message *msg = entry->msg;
   if (msg->rtype == CL_QRY || msg->rtype == CL_QRY_O || msg->rtype == RTXN_CONT ||
       msg->rtype == RQRY_RSP || msg->rtype == RACK_PREP  ||
-      msg->rtype == RACK_FIN || msg->rtype == RTXN) {
+      msg->rtype == RACK_FIN || msg->rtype == RTXN || msg->rtype == CRQRY_RSP || msg->rtype == RACK_CFIN) {
     // these msg will send back to local node
     uint64_t queue_time = get_sys_clock() - entry->starttime;
 		INC_STATS(thd_id,trans_msg_remote_wait,queue_time);
   } else if (msg->rtype == RQRY || msg->rtype == RQRY_CONT ||
              msg->rtype == RFIN || msg->rtype == RPREPARE ||
-             msg->rtype == RFWD){
+             msg->rtype == RFWD || msg->rtype == CRQRY || msg->rtype == CRFIN){
     // these msg will send to remote node
     uint64_t queue_time = get_sys_clock() - entry->starttime;
 		INC_STATS(thd_id,trans_msg_local_wait,queue_time);

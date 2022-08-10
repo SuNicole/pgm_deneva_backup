@@ -93,7 +93,7 @@ class rdma_mvcc;
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 class RDMA_2pl;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT2
 class RDMA_opt_2pl;
 #endif
 #if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT || RDMA_TS || CC_ALG == RDMA_TS1
@@ -101,6 +101,9 @@ class RdmaTxnTable;
 #endif
 #if CC_ALG == RDMA_DSLR_NO_WAIT
 class RDMA_dslr_no_wait;
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT3
+class RDMA_opt_no_wait3 ;
 #endif
 #if CC_ALG == RDMA_BAMBOO_NO_WAIT
 class RDMA_bamboo;
@@ -128,6 +131,7 @@ class Remote_query;
 class TxnManPool;
 class TxnPool;
 class AccessPool;
+class LockedNodePool;
 class TxnTablePool;
 class MsgPool;
 class RowPool;
@@ -191,7 +195,7 @@ extern rdma_mvcc rmvcc_man;
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 extern RDMA_2pl r2pl_man;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT2
 extern RDMA_opt_2pl o2pl_man;
 #endif
 #if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT|| CC_ALG == RDMA_TS || CC_ALG == RDMA_TS1
@@ -202,6 +206,9 @@ extern  RDMA_dslr_no_wait dslr_man;
 #endif
 #if CC_ALG == RDMA_BAMBOO_NO_WAIT
 extern RDMA_bamboo bamboo_man;
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT3
+extern RDMA_opt_no_wait3 nowait3_man;
 #endif
 #if CC_ALG == RDMA_MAAT
 extern RDMA_Maat rmaat_man;
@@ -226,6 +233,7 @@ extern Workload * m_wl;
 extern TxnManPool txn_man_pool;
 extern TxnPool txn_pool;
 extern AccessPool access_pool;
+extern LockedNodePool locked_node_pool;
 extern TxnTablePool txn_table_pool;
 extern MsgPool msg_pool;
 extern RowPool row_pool;
@@ -456,6 +464,11 @@ extern uint32_t g_max_num_waits;
 extern UInt32 g_repl_type;
 extern UInt32 g_repl_cnt;
 
+enum YCSBQueryType {
+    YCSB_DISCRETE,
+    YCSB_CONTINUOUS
+};
+
 enum RC { RCOK=0, Commit, Abort, WAIT, WAIT_REM, ERROR, FINISH, NONE};
 enum RemReqType {
   INIT_DONE = 0,
@@ -464,14 +477,18 @@ enum RemReqType {
     CL_QRY,
     CL_QRY_O,//one server but use the msg queue
     RQRY,
+    CRQRY,//continuous read txn
     RQRY_CONT,
     RFIN,
+    CRFIN,
     RLK_RSP,
     RULK_RSP,
     RQRY_RSP,
+    CRQRY_RSP,
     RACK,
     RACK_PREP,
     RACK_FIN,
+    RACK_CFIN,
     RTXN,
     RTXN_CONT,
     RINIT,
@@ -571,6 +588,8 @@ enum RecordStatus {COMMITED = 0, ABORTED, PENDING};
 #define INDEX		index_btree
 #elif (INDEX_STRUCT == IDX_HASH)
 #define  INDEX		IndexHash
+#elif (INDEX_STRUCT == IDX_RDMA_BTREE)
+#define INDEX       IndexRdmaBtree
 // #elif (INDEX_STRUCT == IDX_RDMA_TPCC)
 // #define INDEX       IndexRdmaTpcc
 #else
@@ -595,9 +614,14 @@ typedef struct{
   uint64_t pointer;
 }faa_info;
 
+struct glob_param {
+	uint64_t part_id;
+};
+
 extern unordered_map<uint64_t, faa_info> accum_faa;
 extern pthread_mutex_t * accum_faa_mutex; 
 
 extern map<uint64_t, uint64_t> txn_status;//0 - uncommitted;1 - committed;2 - abort
+extern uint64_t my_root_offset;
 
 #endif

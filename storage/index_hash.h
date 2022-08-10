@@ -74,6 +74,7 @@ public:
 	RC	 		index_read(idx_key_t key, int count, itemid_t * &item, int part_id=-1);
 	RC	 		index_read(idx_key_t key, itemid_t * &item,
 							int part_id=-1, int thd_id=0);
+	RC index_node_read(idx_key_t key, rdma_bt_node *&leaf_node, int part_id = -1, int thd_id = 0){};
 	uint64_t get_count() {return 0;}
 	// the following call returns a list of items
 //	RC 			index_read(idx_key_t key, Link_Item * &li, uint64_t &item_cnt);

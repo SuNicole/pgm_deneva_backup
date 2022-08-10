@@ -103,7 +103,7 @@ Message * Message::create_message(LogRecord * record, RemReqType rtype) {
 
 
 Message * Message::create_message(BaseQuery * query, RemReqType rtype) {
- assert(rtype == RQRY || rtype == CL_QRY || rtype == CL_QRY_O);
+ assert(rtype == RQRY || rtype == CL_QRY || rtype == CL_QRY_O || rtype == CRQRY);
  Message * msg = create_message(rtype);
 #if WORKLOAD == YCSB
  ((YCSBClientQueryMessage*)msg)->copy_from_query(query);
@@ -138,6 +138,7 @@ Message * Message::create_message(RemReqType rtype) {
       break;
     case RQRY:
     case RQRY_CONT:
+    case CRQRY:
 #if WORKLOAD == YCSB
       msg = new YCSBQueryMessage;
 #elif WORKLOAD == TPCC
@@ -150,9 +151,11 @@ Message * Message::create_message(RemReqType rtype) {
       msg->init();
       break;
     case RFIN:
+    case CRFIN:
       msg = new FinishMessage;
       break;
     case RQRY_RSP:
+    case CRQRY_RSP:
       msg = new QueryResponseMessage;
       break;
     case LOG_MSG:
@@ -167,6 +170,7 @@ Message * Message::create_message(RemReqType rtype) {
     case CALVIN_ACK:
     case RACK_PREP:
     case RACK_FIN:
+    case RACK_CFIN:
       msg = new AckMessage;
       break;
     case CL_QRY:
@@ -304,6 +308,7 @@ void Message::release_message(Message * msg) {
       break;
                     }
     case RQRY:
+    case CRQRY:
     case RQRY_CONT: {
 #if WORKLOAD == YCSB
       YCSBQueryMessage * m_msg = (YCSBQueryMessage*)msg;
@@ -318,13 +323,15 @@ void Message::release_message(Message * msg) {
       delete m_msg;
       break;
                     }
-    case RFIN: {
+    case RFIN:
+    case CRFIN: {
       FinishMessage * m_msg = (FinishMessage*)msg;
       m_msg->release();
       delete m_msg;
       break;
                }
-    case RQRY_RSP: {
+    case RQRY_RSP: 
+    case CRQRY_RSP: {
       QueryResponseMessage * m_msg = (QueryResponseMessage*)msg;
       m_msg->release();
       delete m_msg;
@@ -350,7 +357,8 @@ void Message::release_message(Message * msg) {
                       }
     case CALVIN_ACK:
     case RACK_PREP:
-    case RACK_FIN: {
+    case RACK_FIN: 
+    case RACK_CFIN:{
       AckMessage * m_msg = (AckMessage*)msg;
       m_msg->release();
       delete m_msg;
@@ -493,6 +501,7 @@ uint64_t YCSBClientQueryMessage::get_size() {
   uint64_t size = ClientQueryMessage::get_size();
   size += sizeof(size_t);
   size += sizeof(ycsb_request) * requests.size();
+  size += sizeof(YCSBQueryType);
   return size;
 }
 
@@ -505,6 +514,12 @@ void YCSBClientQueryMessage::copy_from_query(BaseQuery * query) {
   }
 */
   requests.copy(((YCSBQuery*)(query))->requests);
+  if(((YCSBQuery*)(query))->query_type == YCSB_DISCRETE){
+    // printf("[message.cpp:517]normal txn\n");
+  }else if(((YCSBQuery*)(query))->query_type == YCSB_CONTINUOUS){
+    // printf("[message.cpp:519]continuous txn\n");
+  }
+  ycsb_query_type = ((YCSBQuery*)(query))->query_type;
 }
 
 
@@ -517,13 +532,27 @@ void YCSBClientQueryMessage::copy_from_txn(TxnManager * txn) {
   }
 */
   requests.copy(((YCSBQuery*)(txn->query))->requests);
+  ycsb_query_type = ((YCSBQuery*)(txn->query))->query_type;
+
 }
 
 void YCSBClientQueryMessage::copy_to_txn(TxnManager * txn) {
   // this only copies over the pointers, so if requests are freed, we'll lose the request data
+//   if(((YCSBQuery*)(txn->query))->query_type == YCSB_CONTINUOUS){
+//       printf("[message.cpp:525]copy continuous txn query\n");
+//   }else if(((YCSBQuery*)(txn->query))->query_type == YCSB_DISCRETE){
+//       printf("[message.cpp:527]copy discrete txn query\n");
+//   }
   ClientQueryMessage::copy_to_txn(txn);
   // Copies pointers to txn
   ((YCSBQuery*)(txn->query))->requests.append(requests);
+  ((YCSBQuery*)(txn->query))->query_type = ycsb_query_type;
+//   if(ycsb_query_type == YCSB_DISCRETE){
+//     printf("[message.cpp:548]normal txn\n");
+//   }else if(ycsb_query_type == YCSB_CONTINUOUS){
+//     printf("[message.cpp:550]continuous txn\n");
+//   }
+
 /*
   for(uint64_t i = 0; i < requests.size(); i++) {
       YCSBQuery::copy_request_to_qry(((YCSBQuery*)(txn->query)),this,i);
@@ -547,7 +576,14 @@ void YCSBClientQueryMessage::copy_from_buf(char * buf) {
     assert(req->key < g_synth_table_size);
     requests.add(req);
   }
- assert(ptr == get_size());
+//   YCSBQueryType type = YCSB_DISCRETE;
+  COPY_VAL(ycsb_query_type,buf,ptr);
+//   if(ycsb_query_type == YCSB_DISCRETE){
+//     printf("[message.cpp:582]normal txn\n");
+//   }else if(ycsb_query_type == YCSB_CONTINUOUS){
+//     printf("[message.cpp:584]continuous txn\n");
+//   }
+  assert(ptr == get_size());
 }
 
 void YCSBClientQueryMessage::copy_to_buf(char * buf) {
@@ -563,6 +599,7 @@ void YCSBClientQueryMessage::copy_to_buf(char * buf) {
     COPY_BUF(buf,*req,ptr);
     //DEBUG("3YCSBClientQuery %ld\n",ptr);
   }
+  COPY_BUF(buf,ycsb_query_type,ptr);
  assert(ptr == get_size());
 }
 /************************/
@@ -1316,6 +1353,7 @@ uint64_t FinishMessage::get_size() {
     CC_ALG == DLI_DTA || CC_ALG == DLI_DTA2 || CC_ALG == DLI_DTA3 || CC_ALG == DLI_MVCC || CC_ALG == SILO
   size += sizeof(uint64_t);
 #endif
+    size += sizeof(YCSBQueryType);
   return size;
 }
 
@@ -1329,10 +1367,12 @@ void FinishMessage::copy_from_txn(TxnManager * txn) {
     CC_ALG == DLI_MVCC || CC_ALG == SILO
   commit_timestamp = txn->get_commit_timestamp();
 #endif
+    finish_query_type = ((YCSBQuery*)(txn->query))->query_type;
 }
 
 void FinishMessage::copy_to_txn(TxnManager * txn) {
   Message::mcopy_to_txn(txn);
+ ((YCSBQuery*)(txn->query))->query_type = finish_query_type;
 
 #if CC_ALG == MAAT || CC_ALG == WOOKONG || CC_ALG == SSI || CC_ALG == WSI || \
     CC_ALG == DTA || CC_ALG == DLI_DTA || CC_ALG == DLI_DTA2 || CC_ALG == DLI_DTA3 || CC_ALG == DLI_MVCC_OCC || \
@@ -1347,6 +1387,7 @@ void FinishMessage::copy_from_buf(char * buf) {
   COPY_VAL(pid,buf,ptr);
   COPY_VAL(rc,buf,ptr);
   COPY_VAL(readonly,buf,ptr);
+  COPY_VAL(finish_query_type,buf,ptr);
 #if CC_ALG == MAAT || CC_ALG == WOOKONG || CC_ALG == SSI || CC_ALG == WSI || \
     CC_ALG == DTA || CC_ALG == DLI_DTA || CC_ALG == DLI_DTA2 || CC_ALG == DLI_DTA3 || CC_ALG == DLI_MVCC_OCC || \
     CC_ALG == DLI_MVCC || CC_ALG == SILO
@@ -1361,6 +1402,7 @@ void FinishMessage::copy_to_buf(char * buf) {
   COPY_BUF(buf,pid,ptr);
   COPY_BUF(buf,rc,ptr);
   COPY_BUF(buf,readonly,ptr);
+  COPY_BUF(buf,finish_query_type,ptr);
 #if CC_ALG == MAAT || CC_ALG == WOOKONG || CC_ALG == SSI || CC_ALG == WSI || \
     CC_ALG == DTA || CC_ALG == DLI_DTA || CC_ALG == DLI_DTA2 || CC_ALG == DLI_DTA3 || CC_ALG == DLI_MVCC_OCC || \
     CC_ALG == DLI_MVCC || CC_ALG == SILO
@@ -1461,6 +1503,7 @@ uint64_t YCSBQueryMessage::get_size() {
   uint64_t size = QueryMessage::get_size();
   size += sizeof(size_t);
   size += sizeof(ycsb_request) * requests.size();
+  size += sizeof(YCSBQueryType);
   return size;
 }
 
@@ -1468,6 +1511,8 @@ void YCSBQueryMessage::copy_from_txn(TxnManager * txn) {
   QueryMessage::copy_from_txn(txn);
   requests.init(g_req_per_query);
   ((YCSBTxnManager*)txn)->copy_remote_requests(this);
+    ycsb_msg_query_type = ((YCSBQuery*)(txn->query))->query_type;
+
   //requests.copy(((YCSBQuery*)(txn->query))->requests);
 }
 
@@ -1481,6 +1526,7 @@ void YCSBQueryMessage::copy_to_txn(TxnManager * txn) {
 #else
   ((YCSBQuery*)(txn->query))->requests.append(requests);
   ((YCSBQuery*)(txn->query))->orig_request = &requests;
+   ((YCSBQuery*)(txn->query))->query_type =  ycsb_msg_query_type;
 #endif
 }
 
@@ -1498,6 +1544,8 @@ void YCSBQueryMessage::copy_from_buf(char * buf) {
     ASSERT(req->key < g_synth_table_size);
     requests.add(req);
   }
+  COPY_VAL(ycsb_msg_query_type,buf,ptr);
+
  assert(ptr == get_size());
 }
 
@@ -1510,6 +1558,7 @@ void YCSBQueryMessage::copy_to_buf(char * buf) {
     ycsb_request * req = requests[i];
     COPY_BUF(buf,*req,ptr);
   }
+  COPY_BUF(buf,ycsb_msg_query_type,ptr);
  assert(ptr == get_size());
 }
 /************************/

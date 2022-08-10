@@ -22,8 +22,24 @@
 #include "index_base.h"
 
 
-typedef struct bt_node {
+// typedef struct bt_node {
+// 	// TODO bad hack!
+//     uint64_t intent_lock;//intent lock
+//    	void ** pointers; // for non-leaf nodes, point to bt_nodes
+// 	bool is_leaf;
+// 	idx_key_t * keys;
+// 	bt_node * parent;
+// 	UInt32 num_keys;
+// 	bt_node * next;
+// 	bool latch;
+// 	pthread_mutex_t locked;
+// 	latch_t latch_type;
+// 	UInt32 share_cnt;
+// } bt_node;
+class bt_node {
+public:
 	// TODO bad hack!
+    uint64_t intent_lock;//intent lock
    	void ** pointers; // for non-leaf nodes, point to bt_nodes
 	bool is_leaf;
 	idx_key_t * keys;
@@ -34,21 +50,35 @@ typedef struct bt_node {
 	pthread_mutex_t locked;
 	latch_t latch_type;
 	UInt32 share_cnt;
-} bt_node;
+    RC          get_range_lock(itemid_t * item);
+    bool s_lock_content(uint64_t lock);
+    bool is_lock_content(uint64_t lock);
+    bool x_lock_content(uint64_t lock);
+    bool ix_lock_content(uint64_t lock);
+    uint64_t decode_ix_lock(uint64_t lock);
+    uint64_t decode_x_lock(uint64_t lock);
+    uint64_t decode_is_lock(uint64_t lock);
+    uint64_t decode_s_lock(uint64_t lock);
+} ;
 
-struct glob_param {
-	uint64_t part_id;
-};
+// struct glob_param {
+// 	uint64_t part_id;
+// };
 
 class index_btree : public index_base {
 public:
+    RC          init(){}
 	RC			init(uint64_t part_cnt);
 	RC			init(uint64_t part_cnt, table_t * table);
 	bool 		index_exist(idx_key_t key); // check if the key exist.
 	RC 			index_insert(idx_key_t key, itemid_t * item, int part_id = -1);
 	RC 			index_insert_nonunique(idx_key_t key, itemid_t * item, int part_id = -1) { return RCOK;}
 	RC 			get_index_by_id(uint64_t index, itemid_t * &item, int part_id=-1) {return RCOK;};
-    RC          index_read(idx_key_t key, itemid_t *&item, uint64_t thd_id, int64_t part_id = -1);
+    RC          index_read(idx_key_t key, itemid_t *&item, uint64_t thd_id, uint64_t part_id = -1);
+    RC          index_read(idx_key_t key, itemid_t *&item, int part_id = -1, int thd_id = 0){};
+	RC index_node_read(idx_key_t key, rdma_bt_node *&leaf_node, int part_id = -1, int thd_id = 0){};
+    RC          index_remove(idx_key_t key) {
+    return RCOK;};
 	RC	 		index_read(idx_key_t key, itemid_t * &item, int part_id = -1);
 	RC	 		index_read(idx_key_t key, itemid_t * &item);
 	RC 			index_next(uint64_t thd_id, itemid_t * &item, bool samekey = false);

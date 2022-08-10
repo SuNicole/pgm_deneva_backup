@@ -25,6 +25,18 @@ public:
     }
   };
   
+  void set_faa_meta(int i, uint64_t add, uint64_t* local_addr, uint64_t remote_off){
+    sr[i].opcode = IBV_WR_ATOMIC_FETCH_AND_ADD;
+    sr[i].wr.atomic.compare_add = add;
+    sr[i].wr.atomic.swap = 0;
+
+    sr[i].imm_data = 0;
+    sr[i].wr.atomic.remote_addr = remote_off;
+
+    sge[i].addr = (uint64_t)local_addr;
+    sge[i].length = sizeof(uint64_t);
+  }; //for faa
+
   void set_atomic_meta(int i, uint64_t compare, uint64_t swap, uint64_t* local_addr, uint64_t remote_off){
     sr[i].opcode = IBV_WR_ATOMIC_CMP_AND_SWP;
     sr[i].wr.atomic.compare_add = compare;
@@ -50,11 +62,12 @@ public:
     });
 
     for(int i=0;i<num;i++){
-      if(sr[i].opcode == IBV_WR_ATOMIC_CMP_AND_SWP){
+      if(sr[i].opcode == IBV_WR_ATOMIC_CMP_AND_SWP || sr[i].opcode == IBV_WR_ATOMIC_FETCH_AND_ADD ){
         sr[i].wr.atomic.rkey = qp_ptr->remote_mr.value().key;
         sge[i].lkey = qp_ptr->local_mr.value().lkey;
       }
-      else{
+    //   else if(sr[i].opcode == IBV_WR_RDMA_READ || sr[i].opcode == IBV_WR_RDMA_WRITE){
+        else{
         sr[i].wr.rdma.rkey = qp_ptr->remote_mr.value().key;
         sge[i].lkey = qp_ptr->local_mr.value().lkey;
       }

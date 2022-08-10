@@ -41,6 +41,28 @@ RC index_btree::init(uint64_t part_cnt, table_t * table) {
 	return RCOK;
 }
 
+RC  bt_node::get_range_lock(itemid_t * item){
+    bt_node * range_node =(bt_node *)(item->parent);
+
+    uint64_t lock = range_node->intent_lock;
+    if(s_lock_content(lock)){
+        // printf("[index_btree.cpp:49]lock = %ld,IS = %ld,IX = %ld,S = %ld,X = %ld\n",lock,decode_is_lock(lock),decode_ix_lock(lock),decode_s_lock(lock),decode_x_lock(lock));
+        return Abort;
+    }else{
+        uint64_t add_value = 1;//0x0010
+        add_value = add_value<<16;//0x0010
+        uint64_t before_faa = ATOM_FETCH_ADD(intent_lock,add_value);
+        if(s_lock_content(before_faa)){
+             printf("[index_btree.cpp:56]lock = %ld,IS = %ld,IX = %ld,S = %ld,X = %ld\n",lock,decode_is_lock(lock),decode_ix_lock(lock),decode_s_lock(lock),decode_x_lock(lock));
+            add_value = (-1);//0x0010
+            add_value = add_value<<16;//0x0010
+            before_faa = ATOM_FETCH_ADD(intent_lock,add_value);
+            return Abort;
+        }
+        return RCOK;
+    }
+}
+
 bt_node * index_btree::find_root(uint64_t part_id) {
 	assert (part_id < part_cnt);
 	return roots[part_id];
@@ -95,17 +117,18 @@ RC index_btree::index_read(idx_key_t key, itemid_t *&item, int part_id) {
 	return index_read(key, item, 0, part_id);
 }
 
-RC index_btree::index_read(idx_key_t key, itemid_t *&item, uint64_t thd_id, int64_t part_id) {
+RC index_btree::index_read(idx_key_t key, itemid_t *&item, uint64_t thd_id, uint64_t part_id) {
 	RC rc = Abort;
 	glob_param params;
 	assert(part_id != -1);
 	params.part_id = part_id;
 	bt_node * leaf;
 	find_leaf(params, key, INDEX_READ, leaf);
-  if (leaf == NULL) M_ASSERT(false, "the leaf does not exist!");
+    if (leaf == NULL) M_ASSERT(false, "the leaf does not exist!");
 	for (UInt32 i = 0; i < leaf->num_keys; i++)
 		if (leaf->keys[i] == key) {
 			item = (itemid_t *)leaf->pointers[i];
+            item->parent = leaf;
 			release_latch(leaf);
 			(*cur_leaf_per_thd[thd_id]) = leaf;
 			*cur_idx_per_thd[thd_id] = i;
@@ -158,7 +181,7 @@ RC index_btree::index_insert(idx_key_t key, itemid_t * item, int part_id) {
 //			assert( release_latch(ex_list[i]) == LATCH_EX );
   } else {  // split the nodes when necessary
 		rc = split_lf_insert(params, leaf, key, item);
-    for (int i = 0; i < depth; i++) release_latch(ex_list[i]);
+        for (int i = 0; i < depth; i++) release_latch(ex_list[i]);
 //			assert( release_latch(ex_list[i]) == LATCH_EX );
 	}
 //	assert(leaf->latch_type == LATCH_NONE);
@@ -194,6 +217,7 @@ RC index_btree::make_node(uint64_t part_id, bt_node *& node) {
 //	new_node->locked = false;
 	new_node->latch = false;
 	new_node->latch_type = LATCH_NONE;
+    new_node->intent_lock = 0;
 
 	node = new_node;
 	return RCOK;
@@ -329,10 +353,11 @@ RC index_btree::find_leaf(glob_param params, idx_key_t key, idx_acc_t access_typ
 	// key should be inserted into the right side of i
   if (!latch_node(c, LATCH_SH)) return Abort;
 	while (!c->is_leaf) {
-		assert(get_part_id(c) == params.part_id);
-		assert(get_part_id(c->keys) == params.part_id);
+        //TODO - need check:preserve?
+		// assert(get_part_id(c) == params.part_id);
+		// assert(get_part_id(c->keys) == params.part_id);
 		for (i = 0; i < c->num_keys; i++) {
-      if (key < c->keys[i]) break;
+            if (key < c->keys[i]) break;
 		}
 		child = (bt_node *)c->pointers[i];
 		if (!latch_node(child, LATCH_SH)) {
@@ -350,8 +375,8 @@ RC index_btree::find_leaf(glob_param params, idx_key_t key, idx_acc_t access_typ
 					last_ex = NULL;
 					return Abort;
 				}
-        if (last_ex == NULL) last_ex = c;
-      } else {
+                if (last_ex == NULL) last_ex = c;
+            } else {
 				cleanup(c, last_ex);
 				last_ex = NULL;
 				release_latch(c);
@@ -657,3 +682,47 @@ void index_btree::print_btree(bt_node * start) {
 	} while (!last_iter);
 
 }*/
+
+uint64_t bt_node::decode_ix_lock(uint64_t lock){
+    return (lock<<16)>>48;
+}
+
+uint64_t bt_node::decode_x_lock(uint64_t lock){
+    return (lock<<48)>>48;
+}
+
+uint64_t bt_node::decode_is_lock(uint64_t lock){
+    return lock>>48;
+}
+
+uint64_t bt_node::decode_s_lock(uint64_t lock){
+    return (lock<<32)>>48;
+}
+
+bool bt_node::s_lock_content(uint64_t lock){
+    uint64_t ix_lock = decode_ix_lock(lock);
+    uint64_t x_lock = decode_x_lock(lock);
+    if((ix_lock != 0)||(x_lock != 0)){
+        return true;
+    }else return false;
+}
+
+bool bt_node::is_lock_content(uint64_t lock){
+    uint64_t x_lock = decode_x_lock(lock);
+    if(x_lock != 0){
+        return true;
+    }else return false;
+}
+
+bool bt_node::ix_lock_content(uint64_t lock){
+    uint64_t s_lock = decode_s_lock(lock);
+    uint64_t x_lock = decode_x_lock(lock);
+    if((s_lock != 0)||(x_lock != 0)){
+        return true;
+    }else return false;
+}
+
+bool bt_node::x_lock_content(uint64_t lock){
+    if(lock != 0)return true;
+    else return false;
+}

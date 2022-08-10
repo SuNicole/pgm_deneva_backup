@@ -113,6 +113,7 @@ public:
     CC_ALG == DLI_MVCC || CC_ALG == SILO
   uint64_t commit_timestamp;
 #endif
+  YCSBQueryType finish_query_type;
 };
 
 class LogMessage : public Message {
@@ -275,6 +276,8 @@ public:
   uint64_t client_startts;
   uint64_t first_startts;
   Array<uint64_t> partitions;
+    // if(ycsb_query->query_type == YCSB_CONTINUOUS){
+//   YCSBQueryType client_query_type;
 };
 
 class YCSBClientQueryMessage : public ClientQueryMessage {
@@ -289,7 +292,7 @@ public:
   void release();
 
   Array<ycsb_request*> requests;
-
+  YCSBQueryType ycsb_query_type;
 };
 
 class TPCCClientQueryMessage : public ClientQueryMessage {
@@ -410,7 +413,7 @@ public:
   void release();
 
  Array<ycsb_request*> requests;
-
+  YCSBQueryType ycsb_msg_query_type;
 };
 
 class TPCCQueryMessage : public QueryMessage {

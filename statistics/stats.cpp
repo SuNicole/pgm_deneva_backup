@@ -132,6 +132,28 @@ void Stats_thd::clear() {
   overflow_abort = 0;
   process_overflow = 0;
 
+//opt_2pl
+  opt_no_wait_abort1 = 0;
+  opt_no_wait_abort2 = 0;
+  opt_no_wait_abort3 = 0;
+  opt_no_wait_abort4 = 0;
+  opt_no_wait_abort5 = 0;
+  opt_no_wait_abort6 = 0;
+  opt_no_wait_abort7 = 0;
+  opt_no_wait_abort8 = 0;
+
+  no_wait_abort1 = 0;
+  no_wait_abort2 = 0;
+  no_wait_abort3 = 0;
+  no_wait_abort4 = 0;
+  no_wait_abort5 = 0;
+
+  s_content_abort = 0;
+  is_content_abort = 0;
+  is_content_abort2 = 0;
+  x_content_abort = 0;
+  ix_content_abort = 0;
+
   // Breakdown
   ts_alloc_time=0;
   abort_time=0;
@@ -675,6 +697,18 @@ void Stats_thd::print(FILE * outf, bool prog) {
           cas_cnt , 
           tpcc_fin_abort,silo_lock_write_abort,silo_lock_read_abort ,silo_127_abort ,silo_155_abort ,cnt_un_abort
 );
+
+//   uint64_t s_content_abort;
+//   uint64_t is_content_abort;
+//   uint64_t x_content_abort;
+//   uint64_t ix_content_abort;
+  fprintf(outf, //ywq
+  ",s_content_abort = %ld "
+  ",is_content_abort = %ld "
+  ",is_content_abort2 = %ld "
+  ",x_content_abort = %ld "
+  ",ix_content_abort = %ld ",
+    s_content_abort,is_content_abort,is_content_abort2,x_content_abort,ix_content_abort);
 
   // Breakdown
   fprintf(outf,
@@ -1331,6 +1365,22 @@ void Stats_thd::print(FILE * outf, bool prog) {
         ",overflow_abort = %ld"
         ",process_overflow = %ld",jump_abort,deadlock_abort,overflow_abort,process_overflow);
 
+    fprintf(outf,
+        ",opt_no_wait_abort1 = %ld"
+        ",opt_no_wait_abort2 = %ld"
+        ",opt_no_wait_abort3 = %ld"
+        ",opt_no_wait_abort4 = %ld"
+        ",opt_no_wait_abort5 = %ld"
+        ",opt_no_wait_abort6 = %ld"
+        ",opt_no_wait_abort7 = %ld"
+        ",opt_no_wait_abort8 = %ld"
+        ",no_wait_abort1 = %ld"
+        ",no_wait_abort2 = %ld"
+        ",no_wait_abort3 = %ld"
+        ",no_wait_abort4 = %ld"
+        ",no_wait_abort5 = %ld"
+        ,opt_no_wait_abort1,opt_no_wait_abort2,opt_no_wait_abort3,opt_no_wait_abort4,opt_no_wait_abort5,opt_no_wait_abort6,opt_no_wait_abort7,opt_no_wait_abort8,no_wait_abort1,no_wait_abort2,no_wait_abort3,no_wait_abort4,no_wait_abort5);
+
   // if (!prog) {
   //     last_start_commit_latency.quicksort(0,last_start_commit_latency.cnt-1);
   // first_start_commit_latency.quicksort(0,first_start_commit_latency.cnt-1);
@@ -1500,6 +1550,27 @@ void Stats_thd::combine(Stats_thd * stats) {
   deadlock_abort+=stats->deadlock_abort;
   overflow_abort+=stats->overflow_abort;
   process_overflow+=stats->process_overflow;
+
+  opt_no_wait_abort1+=stats->opt_no_wait_abort1;
+  opt_no_wait_abort2+=stats->opt_no_wait_abort2;
+  opt_no_wait_abort3+=stats->opt_no_wait_abort3;
+  opt_no_wait_abort4+=stats->opt_no_wait_abort4;
+  opt_no_wait_abort5+=stats->opt_no_wait_abort5;
+  opt_no_wait_abort6+=stats->opt_no_wait_abort6;
+  opt_no_wait_abort7+=stats->opt_no_wait_abort7;
+  opt_no_wait_abort8+=stats->opt_no_wait_abort8;
+
+  no_wait_abort1+=stats->no_wait_abort1;
+  no_wait_abort2+=stats->no_wait_abort2;
+  no_wait_abort3+=stats->no_wait_abort3;
+  no_wait_abort4+=stats->no_wait_abort4;
+  no_wait_abort5+=stats->no_wait_abort5;
+
+  s_content_abort+=stats->s_content_abort;
+  is_content_abort+=stats->is_content_abort;
+  is_content_abort2+=stats->is_content_abort2;
+  x_content_abort+=stats->x_content_abort;
+  ix_content_abort+=stats->ix_content_abort;
 
   // Breakdown
   ts_alloc_time+=stats->ts_alloc_time;

@@ -76,7 +76,7 @@ OutputThread * output_thds;
 AbortThread * abort_thds;
 LogThread * log_thds;
 
-#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE))
+#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE)||(CC_ALG == RDMA_OPT_NO_WAIT2))
 HotThread * hot_thds;
 #endif
 
@@ -211,6 +211,10 @@ int main(int argc, char *argv[]) {
 	printf("Initializing access pool... ");
 	fflush(stdout);
 	access_pool.init(m_wl,0);
+	printf("Done\n");
+	printf("Initializing txn node table pool... ");
+	fflush(stdout);
+    locked_node_pool.init(m_wl,0);
 	printf("Done\n");
 	printf("Initializing txn node table pool... ");
 	fflush(stdout);
@@ -364,7 +368,7 @@ int main(int argc, char *argv[]) {
 		all_thd_cnt += 2; // sequencer + scheduler thread
 #endif
 
-#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE))
+#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE)||(CC_ALG == RDMA_OPT_NO_WAIT2))
 	all_thd_cnt += 1; //hotthread
 #endif
 
@@ -397,7 +401,7 @@ int main(int argc, char *argv[]) {
 	calvin_seq_thds = new CalvinSequencerThread[1];
 #endif
 
-#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE))
+#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE)||(CC_ALG == RDMA_OPT_NO_WAIT2))
 	hot_thds = new HotThread[1];
 #endif
 
@@ -519,7 +523,7 @@ int main(int argc, char *argv[]) {
 	pthread_create(&p_thds[id++], &attr, run_thread, (void *)&worker_num_thds[0]);
 #endif
 
-#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE))
+#if !ALL_ES_LOCK && ((CC_ALG == RDMA_OPT_NO_WAIT)||(CC_ALG == RDMA_OPT_WAIT_DIE)||(CC_ALG == RDMA_OPT_NO_WAIT2))
 	hot_thds[0].init(id,g_node_id,m_wl);
 	pthread_create(&p_thds[id++], &attr, run_thread, (void *)&hot_thds[0]);
 #endif

@@ -30,7 +30,8 @@ enum YCSBRemTxnType {
   YCSB_0,
   YCSB_1,
   YCSB_FIN,
-  YCSB_RDONE
+  YCSB_RDONE,
+  YCSB_CON
 };
 
 class YCSBWorkload : public Workload {
@@ -71,8 +72,14 @@ public:
 private:
   void next_ycsb_state();
   RC run_txn_state(yield_func_t &yield, uint64_t cor_id);
+// #if CC_ALG == RDMA_OPT_NO_WAIT3
+  RC run_continuous_txn(yield_func_t &yield, uint64_t cor_id);
+// #endif
+  RC tcp_run_continuous_txn(yield_func_t &yield, uint64_t cor_id);
+  RC tcp_local_run_continuous_txn(yield_func_t &yield, uint64_t cor_id);
   // RC run_co_txn_state(yield_func_t &yield, uint64_t cor_id);
   RC send_remote_one_side_request(yield_func_t &yield, ycsb_request * req,row_t *& row_local, uint64_t cor_id);
+  RC handle_continuous_query(yield_func_t &yield, ycsb_request * req,row_t *& row_local, uint64_t cor_id);
   // RC co_send_remote_one_side_request(yield_func_t &yield, ycsb_request * reqs, row_t *& row_local, uint64_t cor_id);
   RC mvcc_remote_one_side_request(ycsb_request * req,row_t *& row_local);
   RC send_maat_remote_one_side_request(ycsb_request * req,row_t *& row_local);

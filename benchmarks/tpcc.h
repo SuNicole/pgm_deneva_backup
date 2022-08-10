@@ -127,6 +127,7 @@ public:
   void reset();
   RC acquire_locks();
 	RC run_txn(yield_func_t &yield, uint64_t cor_id);
+  RC tcp_local_run_continuous_txn(yield_func_t &yield, uint64_t cor_id){};
 	RC run_txn_post_wait();
 	RC run_calvin_txn(yield_func_t &yield, uint64_t cor_id);
   RC run_tpcc_phase2(yield_func_t &yield, uint64_t cor_id);

@@ -59,6 +59,7 @@
 #include "rdma_mvcc.h"
 #include "rdma_2pl.h"
 #include "rdma_opt_2pl.h"
+#include "rdma_opt_no_wait3.h"
 #include "rdma_maat.h"
 #include "rdma_ts1.h"
 #include "rdma_ts.h"
@@ -114,8 +115,11 @@ rdma_mvcc rmvcc_man;
 #if CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
 RDMA_2pl r2pl_man;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT2
 RDMA_opt_2pl o2pl_man;
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT3
+RDMA_opt_no_wait3 nowait3_man;
 #endif
 #if CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_TS || CC_ALG == RDMA_TS1
 RdmaTxnTable rdma_txn_table;
@@ -149,6 +153,7 @@ Workload * m_wl;
 TxnManPool txn_man_pool;
 TxnPool txn_pool;
 AccessPool access_pool;
+LockedNodePool locked_node_pool;
 TxnTablePool txn_table_pool;
 MsgPool msg_pool;
 RowPool row_pool;
@@ -240,7 +245,7 @@ UInt32 g_work_thread_cnt = 1;
 UInt32 g_work_thread_cnt = 0;
 #endif
 
-#if ALL_ES_LOCK || ((CC_ALG != RDMA_OPT_NO_WAIT)&&(CC_ALG != RDMA_OPT_WAIT_DIE))
+#if ALL_ES_LOCK || ((CC_ALG != RDMA_OPT_NO_WAIT)&&(CC_ALG != RDMA_OPT_WAIT_DIE)&&(CC_ALG != RDMA_OPT_NO_WAIT2))
 UInt32 g_hot_thread_cnt = 0;
 #else
 UInt32 g_hot_thread_cnt = 1;
@@ -291,8 +296,8 @@ UInt64 tuple_count = 0;
 UInt64 max_tuple_size = 0;
 pthread_mutex_t * RDMA_MEMORY_LATCH;
 
-UInt64 rdma_buffer_size = 25*(1024*1024*1024L);
-UInt64 client_rdma_buffer_size = 600*(1024*1024L);
+UInt64 rdma_buffer_size = 18*(1024*1024*1024L);
+UInt64 client_rdma_buffer_size = 800*(1024*1024L);
 UInt64 rdma_index_size = (1024*1024*1024L);
 
 // MAAT
@@ -430,3 +435,6 @@ unordered_map<uint64_t, faa_info> accum_faa;
 pthread_mutex_t * accum_faa_mutex;
 
 map<uint64_t, uint64_t> txn_status;//0 - uncommitted;1 - committed;2 - abort
+
+//tmp value
+uint64_t my_root_offset;

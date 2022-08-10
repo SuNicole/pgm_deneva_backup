@@ -29,6 +29,7 @@ class Workload;
 struct msg_entry;
 struct txn_node;
 class Access;
+class record_intent_lock;
 class Transaction;
 class row_t;
 
@@ -95,6 +96,19 @@ public:
 
 private:
   boost::lockfree::queue<Access* > ** pool;
+  Workload * _wl;
+
+};
+
+class LockedNodePool {
+public:
+  void init(Workload * wl, uint64_t size);
+  void get(uint64_t thd_id, record_intent_lock *& item);
+  void put(uint64_t thd_id, record_intent_lock * items);
+  void free_all();
+
+private:
+  boost::lockfree::queue<record_intent_lock* > ** pool;
   Workload * _wl;
 
 };

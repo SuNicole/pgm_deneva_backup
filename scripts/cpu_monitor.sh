@@ -1,7 +1,8 @@
 sleep 10
 filename=/tmp/${1}_${2}
 echo > $filename
-for i in $(seq 1 90)
+# for i in $(seq 1 90)
+for i in $(seq 1 10)
 do
     ps -aux | grep rundb | grep ${1} | grep -v grep | grep -v ssh | grep -v timeout | awk '{print $2}' |head -1| xargs top -bn1 -p | tail -n 1 | awk '{print $9}' >> $filename
     sleep 1

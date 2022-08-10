@@ -69,6 +69,8 @@ class Row_rdma_mvcc;
 class rdma_mvcc;
 class Row_rdma_2pl;
 class Row_rdma_opt_2pl;
+class Row_rdma_opt_no_wait3;
+class Row_opt_no_wait;
 class Row_rdma_maat;
 class Row_rdma_ts1;
 class Row_rdma_ts;
@@ -154,16 +156,25 @@ public:
 	RC get_ts(uint64_t &orig_wts, uint64_t &orig_rts);
 	RC get_row(access_t type, TxnManager * txn, row_t *& row, uint64_t &orig_wts, uint64_t &orig_rts);
 	RC get_row(access_t type, TxnManager *txn, Access *access);
-	RC get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *access,uint64_t cor_id, uint64_t req_key = 0);
+	RC get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *access,uint64_t cor_id, uint64_t req_key = 0 , itemid_t *m_item = NULL);
 	RC get_row_post_wait(access_t type, TxnManager * txn, row_t *& row);
 	uint64_t return_row(RC rc, access_t type, TxnManager *txn, row_t *row);
+	uint64_t return_row_special(RC rc, access_t type, TxnManager *txn, row_t *row,uint64_t i);
 #if CC_ALG == RDMA_TS1 || CC_ALG == RDMA_TS
 	uint64_t return_row(yield_func_t &yield, access_t type, TxnManager *txn, Access *access, uint64_t cor_id);
 #endif
 	void return_row(RC rc, access_t type, TxnManager * txn, row_t * row, uint64_t _min_commit_ts);
 
-	
-#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE
+#if CC_ALG == RDMA_OPT_NO_WAIT2
+    static uint64_t decode_lock_info_cnt(uint64_t lock_info) {
+		return lock_info >> 2;
+	}
+
+    static uint64_t decode_lock_info_type(uint64_t lock_info) {
+		return lock_info & 0x03;
+	}
+#endif
+#if CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE 
 	// static int get_row_write_size(int tuple_size) {
 	// 	return get_row_size(tuple_size) - sizeof(conflict_num) - sizeof(is_hot) - sizeof(rcnt_neg);
 	// }
@@ -234,6 +245,18 @@ public:
 		volatile uint64_t rcnt_pos;
 		volatile uint64_t lock_info;
 		Row_rdma_opt_2pl * manager;
+      #elif CC_ALG == RDMA_OPT_NO_WAIT2
+        volatile uint64_t conflict_num;
+		volatile uint64_t is_hot;
+		volatile uint64_t lock_info;
+		Row_rdma_opt_2pl * manager;
+      #elif CC_ALG == RDMA_OPT_NO_WAIT3
+		volatile uint64_t _tid_word;
+        volatile uint64_t conflict_num;
+		Row_rdma_opt_no_wait3 * manager;
+      #elif CC_ALG == OPT_NO_WAIT3
+		volatile uint64_t _tid_word;
+        Row_opt_no_wait * manager;
 	#elif CC_ALG == RDMA_OPT_WAIT_DIE
 		volatile uint64_t conflict_num;
 		volatile uint64_t is_hot;
@@ -322,6 +345,7 @@ public:
 	table_t * table;
 	char table_name[15];
     int table_idx;
+    uint64_t parent_offset;
 private:
 	// primary key should be calculated from the data stored in the row.
 	uint64_t 		_primary_key;

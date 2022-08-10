@@ -21,6 +21,23 @@
 
 class table_t;
 
+class rdma_bt_node {
+public:
+  volatile uint64_t intent_lock; //IS|IX|S|X
+  // uint64_t 
+	bool is_leaf;
+	UInt32 num_keys;
+	bool latch;
+	pthread_mutex_t locked;
+	latch_t latch_type;
+	UInt32 share_cnt;
+  uint64_t child_offsets[BTREE_ORDER];
+  uint64_t parent_offset;
+  uint64_t next_node_offset;
+	idx_key_t keys[BTREE_ORDER];
+  void * pointers[BTREE_ORDER];
+};
+
 class index_base {
 public:
   virtual RC init() {
@@ -41,6 +58,8 @@ public:
   
   virtual RC index_read(idx_key_t key, itemid_t *&item, int part_id = -1) = 0;
 
+  virtual RC index_node_read(idx_key_t key, rdma_bt_node *&leaf_node, int part_id = -1, int thd_id = 0) = 0;
+//! !!!!!!
   virtual RC index_read(idx_key_t key, itemid_t *&item, int part_id = -1, int thd_id = 0) = 0;
 
   virtual uint64_t get_count() = 0;

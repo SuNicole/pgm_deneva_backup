@@ -21,6 +21,7 @@
 #include "helper.h"
 #include "query.h"
 #include "array.h"
+#include "ycsb.h"
 
 class Workload;
 class Message;
@@ -65,6 +66,7 @@ private:
 	static uint64_t the_n;
 	static double denom;
 	double zeta_2_theta;
+
 };
 
 class YCSBQuery : public BaseQuery {
@@ -88,6 +90,10 @@ public:
   //std::vector<ycsb_request> requests;
   Array<ycsb_request*> requests;
   void* orig_request;
+
+//   #if MIX_WORKLOAD
+    YCSBQueryType query_type;
+//   #endif
   /*
   uint64_t rid;
   uint64_t access_cnt;

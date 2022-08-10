@@ -10,6 +10,7 @@
 #include <string>
 #include "src/allocator_master.hh"
 #include "index_rdma.h"
+#include "index_rdma_btree.h"
 #include "storage/row.h"
 #include "storage/table.h"
 #include "system/rdma_calvin.h"
@@ -89,6 +90,7 @@ uint64_t get_rm_id(uint64_t node_id,uint64_t thread_id){
 uint64_t Rdma::get_port(uint64_t node_id){
   uint64_t port_id = 0;
   port_id = RDMA_TPORT + node_id;
+//   printf("port id = %ld\n",port_id);
   //port_id = TPORT_PORT + 344 + node_id;
   return port_id ;
 }
@@ -195,14 +197,22 @@ void * Rdma::server_qp(void *){
 
 char* Rdma::get_index_client_memory(uint64_t thd_id, int num) { //num>=1
 	char* temp = (char *)(client_rdma_rm->raw_ptr);
+#if INDEX_STRUCT != IDX_RDMA_BTREE
 	temp += sizeof(IndexInfo) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
+#else
+	temp += sizeof(rdma_bt_node) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
+#endif
 	return temp;
 }
 
 char* Rdma::get_row_client_memory(uint64_t thd_id, int num) { //num>=1
 	//when num>1, get extra row for doorbell batched RDMA requests
 	char* temp = (char *)(client_rdma_rm->raw_ptr);
+#if INDEX_STRUCT != IDX_RDMA_BTREE
 	temp +=  sizeof(IndexInfo) * (max_batch_index * g_total_thread_cnt * (COROUTINE_CNT + 1));
+#else
+	temp +=  sizeof(rdma_bt_node) * ((max_batch_index+1) * g_total_thread_cnt * (COROUTINE_CNT + 1));
+#endif
 	temp += row_t::get_row_size(ROW_DEFAULT_SIZE) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
 	return temp;
 }

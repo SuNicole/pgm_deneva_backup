@@ -11,6 +11,7 @@
 #include "qps/op.hh"
 #include "rdma_calvin.h"
 #include "index_rdma.h"
+#include "index_rdma_btree.h"
 #include "storage/row.h"
 #include "storage/table.h"
 

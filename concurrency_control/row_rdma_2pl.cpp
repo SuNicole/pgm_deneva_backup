@@ -57,6 +57,7 @@ RC Row_rdma_2pl::lock_get(yield_func_t &yield,lock_t type, TxnManager * txn, row
     bool conflict = conflict_lock(lock_info, type, new_lock_info);
     if (conflict) {
         rc = Abort;
+        INC_STATS(txn->get_thd_id(), no_wait_abort4, 1);
 	    return rc;
     }
     if(new_lock_info == 0){
@@ -80,7 +81,7 @@ RC Row_rdma_2pl::lock_get(yield_func_t &yield,lock_t type, TxnManager * txn, row
         if (!simulation->is_done()) goto atomic_retry_lock;
         else {
             DEBUG_M("TxnManager::get_row(abort) access free\n");
-            
+            INC_STATS(txn->get_thd_id(), no_wait_abort5, 1);
             return Abort; //原子性被破坏，CAS失败	
         }
     }         

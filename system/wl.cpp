@@ -22,6 +22,7 @@
 #include "index_btree.h"
 #include "index_hash.h"
 #include "index_rdma.h"
+#include "index_rdma_btree.h"
 #include "mem_alloc.h"
 #include "row.h"
 #include "table.h"
@@ -163,7 +164,9 @@ RC Workload::init_schema(const char * schema_file) {
             index->init(index_table, tables[tname], table_size); 
         #else
             index->init(1024, tables[tname], table_size); 
-        #endif        
+        #endif   
+#elif INDEX_STRUCT == IDX_RDMA_BTREE
+            index->init(part_cnt, tables[tname]);
 #else
 			index->init(part_cnt, tables[tname]);
 #endif
@@ -292,6 +295,8 @@ RC Workload::init_schema(const char * schema_file) {
 
 #elif INDEX_STRUCT == IDX_RDMA
             index->init(1024, tables[tname], table_size); 
+#elif INDEX_STRUCT == IDX_RDMA_BTREE
+            index->init(part_cnt, tables[tname]);
 #else
 			index->init(part_cnt, tables[tname]);
 #endif

@@ -38,11 +38,13 @@ void YCSBQueryGenerator::init() {
 }
 
 BaseQuery * YCSBQueryGenerator::create_query(Workload * h_wl, uint64_t home_partition_id) {
+    // printf("[ycsb_query.cpp:41]create query\n");
 	BaseQuery * query;
 	if (SKEW_METHOD == HOT) {
 		query = gen_requests_hot(home_partition_id, h_wl);
 	} else if (SKEW_METHOD == ZIPF){
 		assert(the_n != 0);
+        // printf("[ycsb_query.cpp:47]zipf create query\n");
 		query = gen_requests_zipf(home_partition_id, h_wl);
 	}
 
@@ -296,6 +298,7 @@ BaseQuery * YCSBQueryGenerator::gen_requests_hot(uint64_t home_partition_id, Wor
 }
 
 BaseQuery * YCSBQueryGenerator::gen_requests_zipf(uint64_t home_partition_id, Workload * h_wl) {
+    // printf("[ycsb_query.cpp:299]gen_requests_zipf\n");
 	YCSBQuery * query = (YCSBQuery*) mem_allocator.alloc(sizeof(YCSBQuery));
 	new(query) YCSBQuery();
 	query->requests.init(g_req_per_query);
@@ -304,6 +307,158 @@ BaseQuery * YCSBQueryGenerator::gen_requests_zipf(uint64_t home_partition_id, Wo
 	set<uint64_t> all_keys;
 	set<uint64_t> partitions_accessed;
 	uint64_t table_size = g_synth_table_size / g_part_cnt;
+
+#if MIX_WORKLOAD 
+    // srand(time(0));
+    // double rand_num =  rand()%100/(double)101;
+    double rand_num=((double)rand())/RAND_MAX;
+    // printf("[ycsb_query.cpp:315]rand num = %lf\n",rand_num);
+    if(rand_num < CONTINUOUS_TXN_PERC){//mix
+        // printf("[ycsb_query.cpp:311]generate continuous txn\n");
+        query->query_type = YCSB_CONTINUOUS;
+
+        double r_twr = (double)(mrand->next() % 10000) / 10000;
+
+        int rid = 0;
+
+        uint64_t first_key = 0;
+        uint64_t primary_key = 0;
+        for (UInt32 i = 0; i < g_req_per_query; i ++) {
+            double r = (double)(mrand->next() % 10000) / 10000;
+            uint64_t partition_id;
+            if(i == 0){
+                if ( (FIRST_PART_LOCAL && rid == 0) || g_node_cnt == 1 ) {
+                    partition_id = home_partition_id;
+                } else {
+                    partition_id = mrand->next() % g_part_cnt;
+                    if(g_strict_ppt && g_part_per_txn <= g_part_cnt) {
+                        while ((partitions_accessed.size() < g_part_per_txn &&
+                                        partitions_accessed.count(partition_id) > 0) ||
+                                    (partitions_accessed.size() == g_part_per_txn &&
+                                        partitions_accessed.count(partition_id) == 0)) {
+                            partition_id = mrand->next() % g_part_cnt;
+                        }
+                    }
+                }
+                
+                uint64_t row_id = zipf(table_size - 1, g_zipf_theta);
+                assert(row_id < table_size);
+                primary_key = row_id * g_part_cnt + partition_id;
+                assert(primary_key < g_synth_table_size);
+                first_key = primary_key;
+
+            }else{
+                primary_key = first_key + i;
+                if(primary_key >= g_synth_table_size)primary_key = g_synth_table_size -1 ;
+
+                uint64_t row_id = zipf(table_size - 1, g_zipf_theta);
+                assert(row_id < table_size);
+                // partition_id = primary_key - row_id * g_part_cnt;
+                partition_id = (primary_key % g_part_cnt)%g_node_cnt;
+            }
+
+            ycsb_request * req = (ycsb_request*) mem_allocator.alloc(sizeof(ycsb_request));
+
+            req->acctype = RD;
+            req->key = primary_key;
+            req->value = mrand->next() % (1<<8);
+            // Make sure a single row is not accessed twice
+            // if (all_keys.find(req->key) == all_keys.end()) {
+            //     all_keys.insert(req->key);
+            //     access_cnt ++;
+            // } else {
+            //     // Need to have the full g_req_per_query amount
+            //     i--;
+            //     continue;
+            // }
+            partitions_accessed.insert(partition_id);
+            rid ++;
+            query->requests.add(req);
+        }
+        // if(partitions_accessed.size() > 1){
+        //     printf("[ycsb_query.cpp:367]%ld %ld\n",partitions_accessed.begin(),partitions_accessed.end());
+        // }
+    }else{//normal
+        // printf("[ycsb_query.cpp:378]generate normal txn\n");
+        query->query_type = YCSB_DISCRETE;
+
+        double r_twr = (double)(mrand->next() % 10000) / 10000;
+	    int rid = 0;
+	    for (UInt32 i = 0; i < g_req_per_query; i ++) {
+            double r = (double)(mrand->next() % 10000) / 10000;
+            uint64_t partition_id;
+#ifdef LESS_DIS
+            if ( rid < LESS_DIS_NUM) {
+                partition_id = home_partition_id;
+            } else {
+                partition_id = (home_partition_id + 1) % g_part_cnt;
+            }
+#else
+	#ifdef NO_REMOTE
+		    partition_id = home_partition_id;
+	#elif ONLY_ONE_HOME
+            if ( (FIRST_PART_LOCAL && rid == 0) || g_node_cnt == 1 ) {
+                partition_id = home_partition_id;
+            } else {
+                partition_id = mrand->next() % g_part_cnt;
+                if(g_strict_ppt && g_part_per_txn <= g_part_cnt || partition_id == home_partition_id) {
+                    while ((partitions_accessed.size() < g_part_per_txn &&
+                                    partitions_accessed.count(partition_id) > 0) ||
+                                (partitions_accessed.size() == g_part_per_txn &&
+                                    partitions_accessed.count(partition_id) == 0) || partition_id == home_partition_id) {
+                        partition_id = mrand->next() % g_part_cnt;
+                    }
+                }
+		    }
+	#else
+            if ( (FIRST_PART_LOCAL && rid == 0) || g_node_cnt == 1 ) {
+                partition_id = home_partition_id;
+            } else {
+                partition_id = mrand->next() % g_part_cnt;
+                if(g_strict_ppt && g_part_per_txn <= g_part_cnt) {
+                    while ((partitions_accessed.size() < g_part_per_txn &&
+                                    partitions_accessed.count(partition_id) > 0) ||
+                                (partitions_accessed.size() == g_part_per_txn &&
+                                    partitions_accessed.count(partition_id) == 0)) {
+                        partition_id = mrand->next() % g_part_cnt;
+                    }
+                }
+		    }
+	#endif
+#endif
+            ycsb_request * req = (ycsb_request*) mem_allocator.alloc(sizeof(ycsb_request));
+            if (r_twr < g_txn_read_perc || r < g_tup_read_perc)
+                req->acctype = RD;
+            else
+                {req->acctype = WR;}
+            uint64_t row_id = zipf(table_size - 1, g_zipf_theta);
+            assert(row_id < table_size);
+            uint64_t primary_key = row_id * g_part_cnt + partition_id;
+            assert(primary_key < g_synth_table_size);
+
+            req->key = primary_key;
+            req->value = mrand->next() % (1<<8);
+            // Make sure a single row is not accessed twice
+            if (all_keys.find(req->key) == all_keys.end()) {
+                all_keys.insert(req->key);
+                access_cnt ++;
+            } else {
+                // Need to have the full g_req_per_query amount
+                i--;
+                continue;
+            }
+            partitions_accessed.insert(partition_id);
+            rid ++;
+
+            query->requests.add(req);
+	    }
+
+        // printf("[ycsb_query.cpp:441]partitions_accessed.size = %d\n",partitions_accessed.size());
+        // if(partitions_accessed.size() > 1){
+        //     printf("[ycsb_query.cpp:443]%ld %ld",partitions_accessed.begin(),partitions_accessed.end());
+        // }
+    }
+#else
 
 	double r_twr = (double)(mrand->next() % 10000) / 10000;
 
@@ -390,9 +545,11 @@ BaseQuery * YCSBQueryGenerator::gen_requests_zipf(uint64_t home_partition_id, Wo
 
 		query->requests.add(req);
 	}
+#endif
+
 	assert(query->requests.size() == g_req_per_query);
 	// Sort the requests in key order.
-	if (g_key_order) {
+	if (g_key_order) { //? skip this operation in mix workload?
 		for(uint64_t i = 0; i < query->requests.size(); i++) {
 			for(uint64_t j = query->requests.size() - 1; j > i ; j--) {
 				if(query->requests[j]->key < query->requests[j-1]->key) {

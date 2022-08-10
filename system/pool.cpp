@@ -304,7 +304,7 @@ void AccessPool::get(uint64_t thd_id, Access *& item) {
   item->test_row = NULL;
   item->offset = 0;
   #endif
-  #if CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_DSLR_NO_WAIT || CC_ALG == RDMA_BAMBOO_NO_WAIT
+  #if CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_DSLR_NO_WAIT || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2
   item->location = g_node_id;
   item->offset = 0;
   #endif
@@ -316,6 +316,12 @@ void AccessPool::get(uint64_t thd_id, Access *& item) {
 #if CC_ALG ==RDMA_TS1
   item->location = g_node_id;
   item->offset = 0;
+#endif
+
+#if CC_ALG == RDMA_OPT_NO_WAIT3
+    item->location = g_node_id;
+    item->offset = 0;
+    item->leaf_offset = 0;
 #endif
 }
 
@@ -332,6 +338,46 @@ void AccessPool::put(uint64_t thd_id, Access * item) {
 
 void AccessPool::free_all() {
     Access * item;
+    DEBUG_M("access_pool free\n");
+    //while(pool->pop(item)) {
+    for(uint64_t thd_id = 0; thd_id < g_total_thread_cnt; thd_id++) {
+        while(pool[thd_id]->pop(item)) {
+            mem_allocator.free(item,sizeof(item));
+        }
+    }
+}
+
+void LockedNodePool::init(Workload * wl, uint64_t size) {
+  _wl = wl;
+  pool = new boost::lockfree::queue<record_intent_lock* > * [g_total_thread_cnt];
+  DEBUG_M("LockedNodePool alloc init\n");
+  for(uint64_t thd_id = 0; thd_id < g_total_thread_cnt; thd_id++) {
+    pool[thd_id] = new boost::lockfree::queue<record_intent_lock* > (size);
+    for(uint64_t i = 0; i < size; i++) {
+    record_intent_lock * item = (record_intent_lock*)mem_allocator.alloc(sizeof(record_intent_lock));
+    put(thd_id,item);
+    }
+  }
+}
+
+void LockedNodePool::get(uint64_t thd_id, record_intent_lock *& item) {
+  //bool r = pool->pop(item);
+  bool r = pool[thd_id]->pop(item);
+  if(!r) {
+    DEBUG_M("LockedNodePool alloc\n");
+    item = (record_intent_lock*)mem_allocator.alloc(sizeof(record_intent_lock));
+  }
+
+  item->bt_node_location = NULL;
+  item->server_id = -1;
+}
+
+void LockedNodePool::put(uint64_t thd_id, record_intent_lock * item) {
+  pool[thd_id]->push(item);
+}
+
+void LockedNodePool::free_all() {
+    record_intent_lock * item;
     DEBUG_M("access_pool free\n");
     //while(pool->pop(item)) {
     for(uint64_t thd_id = 0; thd_id < g_total_thread_cnt; thd_id++) {

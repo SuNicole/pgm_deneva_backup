@@ -1,5 +1,5 @@
 
-#if CC_ALG == RDMA_OPT_NO_WAIT ||  CC_ALG == RDMA_OPT_WAIT_DIE
+#if CC_ALG == RDMA_OPT_NO_WAIT ||  CC_ALG == RDMA_OPT_WAIT_DIE ||CC_ALG == RDMA_OPT_NO_WAIT2
 
 class RDMA_opt_2pl{
 public:

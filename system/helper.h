@@ -262,6 +262,9 @@ public:
 	Data_type type;
 	void * location; // points to the table | page | row
     uint64_t offset;
+    void *parent;//point to parent of btree leaf
+    uint64_t leaf_node_offset;
+    uint64_t range_lock;
     uint64_t table_offset;
 	itemid_t * next;
 	bool valid;

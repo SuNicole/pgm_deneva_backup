@@ -24,6 +24,7 @@
 #include "index_hash.h"
 #include "index_btree.h"
 #include "index_rdma.h"
+#include "index_rdma_btree.h"
 #include "catalog.h"
 #include "manager.h"
 #include "row_lock.h"

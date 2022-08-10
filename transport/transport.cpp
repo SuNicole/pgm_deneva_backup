@@ -115,6 +115,7 @@ uint64_t Transport::get_port_id(uint64_t src_node_id, uint64_t dest_node_id) {
   uint64_t port_id = TPORT_PORT;
   port_id += g_total_node_cnt * dest_node_id;
   port_id += src_node_id;
+  printf("Port ID:  %ld -> %ld : %ld\n",src_node_id,dest_node_id,port_id);
   DEBUG("Port ID:  %ld -> %ld : %ld\n",src_node_id,dest_node_id,port_id);
   return port_id;
 }
@@ -134,6 +135,7 @@ uint64_t Transport::get_twoside_port_id(uint64_t src_node_id, uint64_t dest_node
   //DEBUG("%ld\n",port_id);
   port_id += TPORT_TWOSIDE_PORT;
   //DEBUG("%ld\n",port_id);
+//   printf("port id = %ld\n",port_id);
   return port_id;
 }
 
@@ -160,6 +162,8 @@ uint64_t Transport::get_thd_port_id(uint64_t src_node_id, uint64_t dest_node_id,
   port_id += src_node_id * g_thread_cnt * g_thread_cnt;
   port_id += dest_node_id * g_thread_cnt;
   port_id += send_thread_id;
+//   printf("port id = %ld\n",port_id);
+
   //DEBUG("%ld\n",port_id);
   //DEBUG("%ld\n",port_id);
   return port_id;
