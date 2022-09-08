@@ -57,6 +57,8 @@ RC YCSBWorkload::init() {
 
 	init_table_parallel();
 	printf("Done\n");
+
+    the_index->get_btree_layer();
 	fflush(stdout);
 //	init_table();
 	return RCOK;

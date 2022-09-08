@@ -562,26 +562,26 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
                     add_value = -1;
                     add_value = add_value<<16;//0x0010
                     before_faa = faa_remote_content(yield,i,local_offset,add_value,cor_id);
-                    printf("[ycsb_txn.cpp:534]\n");
+                    // printf("[ycsb_txn.cpp:566] txn %ld lock %ld failed, has X?%d lock, has IX?%d lock, has S?%d lock, has IS%d lock\n", get_txn_id(),local_offset,decode_x_lock(before_faa),decode_ix_lock(before_faa),decode_s_lock(before_faa),decode_is_lock(before_faa));
                     return Abort;
                 }
-
+                // printf("[ycsb_txn.cpp:569] txn %ld lock %ld success, has X?%d lock, has IX?%d lock, has S?%d lock, has IS%d lock\n", get_txn_id(),local_offset,decode_x_lock(leaf_node->intent_lock),decode_ix_lock(leaf_node->intent_lock),decode_s_lock(leaf_node->intent_lock),decode_is_lock(leaf_node->intent_lock));
                 txn->range_node_set[txn->locked_range_num] = (char *)leaf_node - rdma_global_buffer;
                 txn->server_set[txn->locked_range_num] = i;
                 txn->locked_range_num = txn->locked_range_num + 1;
                 //lock got, read data
                 for(int j = 0;j < num_of_key;j++){
-                        if(leaf_node->keys[j] < first_key)continue;
-                        if(leaf_node->keys[j] > last_key)break;
-                        row_t * new_row = (row_t *)(rdma_global_buffer + leaf_node->child_offsets[j]);
+                  if(leaf_node->keys[j] < first_key)continue;
+                  if(leaf_node->keys[j] > last_key)break;
+                  row_t * new_row = (row_t *)(rdma_global_buffer + leaf_node->child_offsets[j]);
 
-                        itemid_t *m_item = (itemid_t *)malloc(sizeof(itemid_t));
-                        m_item->offset = leaf_node->child_offsets[j];
-                        m_item->leaf_node_offset = (char *)leaf_node - rdma_global_buffer;
-                        rc = preserve_access(row,m_item,new_row,RD,new_row->get_primary_key(),i);
-                        // printf("[ycsb_txn.cpp:545]req_key = %ld , row->key = %ld\n",req->key,new_row->get_primary_key());
-                        
-                        // rc = get_row(yield,new_row, RD,row,cor_id, req->key,m_item);
+                  itemid_t *m_item = (itemid_t *)malloc(sizeof(itemid_t));
+                  m_item->offset = leaf_node->child_offsets[j];
+                  m_item->leaf_node_offset = (char *)leaf_node - rdma_global_buffer;
+                  rc = preserve_access(row,m_item,new_row,RD,new_row->get_primary_key(),i);
+                  // printf("[ycsb_txn.cpp:545]req_key = %ld , row->key = %ld\n",req->key,new_row->get_primary_key());
+                  
+                  // rc = get_row(yield,new_row, RD,row,cor_id, req->key,m_item);
                 }
                 leaf_node = (rdma_bt_node*)(rdma_global_buffer + leaf_node->next_node_offset);
                 num_of_key = leaf_node->num_keys;

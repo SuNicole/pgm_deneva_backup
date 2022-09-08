@@ -438,3 +438,5 @@ map<uint64_t, uint64_t> txn_status;//0 - uncommitted;1 - committed;2 - abort
 
 //tmp value
 uint64_t my_root_offset;
+
+uint64_t btree_layer = 1;

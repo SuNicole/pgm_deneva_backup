@@ -43,7 +43,8 @@ public:
     RC          index_read(idx_key_t key, uint64_t count, itemid_t *&item, int64_t part_id);
 	RC 			index_next(uint64_t thd_id, itemid_t * &item, bool samekey = false);
 	uint64_t 	get_count() {return 0;}
-    RC index_remove(idx_key_t key) {return RCOK;};
+    RC          index_remove(idx_key_t key) {return RCOK;};
+    RC          get_btree_layer();
 private:
 	// index structures may have part_cnt = 1 or PART_CNT.
 	uint64_t part_cnt;

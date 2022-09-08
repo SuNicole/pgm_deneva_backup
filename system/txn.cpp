@@ -311,7 +311,9 @@ void Transaction::reset(uint64_t thd_id) {
 	insert_rows.clear();
 	write_cnt = 0;
 	row_cnt = 0;
+#if CC_ALG == RDMA_OPT_NO_WAIT3
     locked_range_num = 0;
+#endif
 	twopc_state = START;
 	rc = RCOK;
 }
@@ -3802,15 +3804,17 @@ write_wait_here:
 	if(type == RD || type == SCAN) {
         //range lock(IS)
         uint64_t range_lock = m_item->range_lock;
-        if(((range_lock<<48)>>48) > 0)return Abort;//no X lock
-        uint64_t faa_num = 1<<48;
+		if (decode_x_lock(range_lock) > 0) {
+			// printf("[txn.cpp:3806]txn %ld lock failed, has X lock\n", get_txn_id());
+			return Abort;//no X lock
+		}
+        uint64_t faa_num = 1<<48; //add IS lock
         uint64_t faa_result = 0;
-		faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
-        if(((faa_result<<48)>>48) > 0){
+		faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+		if (decode_x_lock(faa_result) > 0) {
             faa_num = (-1)<<48;
-            faa_result = 0;
-			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
-            printf("[txn.cpp:3813]\n");
+            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            // printf("[txn.cpp:3815]txn %ld lock failed, has X lock\n", get_txn_id());
             return Abort;
         }
 
@@ -3819,15 +3823,13 @@ write_wait_here:
         uint64_t data_lock = test_row->_tid_word;
         if(s_lock_content(data_lock)){
             faa_num = (-1)<<48;
-            faa_result = 0;
-			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
-            printf("[txn.cpp:3824]\n");
+            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            // printf("[txn.cpp:3824] txn %ld lock failed, has X?%d lock, has IX?%d lock\n", get_txn_id(), decode_x_lock(data_lock), decode_ix_lock(data_lock));
             return Abort;
         }
 
         faa_num = 1<<16;
-        faa_result = 0;
-		faa_remote_content(yield,loc,m_item->offset,faa_num,cor_id);
+        faa_result = faa_remote_content(yield,loc,m_item->offset,faa_num,cor_id);
         //TODO - check
 
 		test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
@@ -3842,14 +3844,12 @@ write_wait_here:
 		//range lock(IX)
         uint64_t range_lock = m_item->range_lock;
         if(ix_lock_content(range_lock))return Abort;
-        uint64_t faa_num = 1<<32;
-        uint64_t faa_result = 0;
-		faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+        uint64_t faa_num = 1<<32; // IX
+        uint64_t faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
         if(ix_lock_content(faa_result)){
             faa_num = (-1)<<32;
-            faa_result = 0;
-			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
-            printf("[txn.cpp:3852]\n");
+            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            // printf("[txn.cpp:3852] txn %ld lock failed, has X lock\n", get_txn_id());
             return Abort;
         }
 
@@ -3858,20 +3858,17 @@ write_wait_here:
         uint64_t data_lock = test_row->_tid_word;
         if(data_lock != 0){
             faa_num = (-1)<<48;
-            faa_result = 0;
-            printf("[txn.cpp:3862]\n");
-			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+			// printf("[txn.cpp:3862] txn %ld lock failed, has X?%d lock, has IX?%d lock, has S?%d lock, has IS%d lock\n", get_txn_id(), decode_x_lock(data_lock),decode_ix_lock(data_lock),decode_s_lock(data_lock),decode_is_lock(data_lock));
             return Abort;
         }
 
         uint64_t try_lock = -1;
-        try_lock = 0;
-		cas_remote_content(yield,loc,m_item->offset,0,1,cor_id);
+        try_lock = cas_remote_content(yield,loc,m_item->offset,0,1,cor_id);
         if(try_lock != 0){
             faa_num = (-1)<<48;
-            faa_result = 0;
-			faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
-            printf("[txn.cpp:3874]\n");
+            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            // printf("[txn.cpp:3874] txn %ld lock failed, has X?%d lock, has IX?%d lock, has S?%d lock, has IS%d lock\n", get_txn_id(),decode_x_lock(try_lock),decode_ix_lock(try_lock),decode_s_lock(try_lock),decode_is_lock(try_lock));
             return Abort;
         }
         int tmp = txn->locked_range_num;
@@ -4249,7 +4246,7 @@ row_t * TxnManager::faa_and_read_remote(yield_func_t &yield, uint64_t target_ser
 	uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
 	uint64_t *local_buf1 = (uint64_t *)Rdma::get_row_client_memory(thd_id);
 	char *local_buf2 = Rdma::get_row_client_memory(thd_id,2);
-    printf("[txn.cpp:3953]local_buf1 = %d, local_buf2 = %d\n",local_buf1,local_buf2);
+    // printf("[txn.cpp:3953]local_buf1 = %d, local_buf2 = %d\n",local_buf1,local_buf2);
 	uint64_t read_size = row_t::get_row_size(ROW_DEFAULT_SIZE);
 
 	uint64_t starttime = get_sys_clock(), endtime;
@@ -4619,6 +4616,8 @@ void TxnManager::get_batch_read(yield_func_t &yield, BatchReadType rtype,int loc
  }
 #endif
 
+// lock 
+// |--IS--|--IX--|--S--|--X--|
 uint64_t TxnManager::decode_ix_lock(uint64_t lock){
     return (lock<<16)>>48;
 }

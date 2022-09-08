@@ -224,6 +224,22 @@ RC IndexRdmaBtree::index_read(idx_key_t key, uint64_t count, itemid_t *&item, in
 	return rc;
 }
 
+RC IndexRdmaBtree::get_btree_layer(){
+	glob_param params;
+	params.part_id = g_node_id;
+    rdma_bt_node * c = find_root(params.part_id);
+    uint64_t layer = 0;
+    while (!c->is_leaf) {
+        layer ++;
+        uint64_t child_offset = c->child_offsets[0];
+        rdma_bt_node *child = (rdma_bt_node *)(rdma_global_buffer + child_offset);
+		c = child;
+	}
+    btree_layer = layer;
+    printf("[index_rdma_btree.cpp:239]btree_layer = %ld\n",btree_layer);
+    return RCOK;
+}
+
 RC IndexRdmaBtree::index_insert(idx_key_t key, itemid_t * item, int part_id) {
 	glob_param params;
 	if (WORKLOAD == TPCC) assert(part_id != -1);

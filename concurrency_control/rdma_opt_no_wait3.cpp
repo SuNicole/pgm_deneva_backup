@@ -21,7 +21,9 @@ void RDMA_opt_no_wait3::write_and_unlock(yield_func_t &yield, RC rc, row_t * row
     //release range lock(IX)
     faa_num = (-1)<<32;
     faa_result = txnMng->faa_remote_content(yield,g_node_id,leaf_offset,faa_num,cor_id);
-    // printf("[rdma_opt_no_wait3.cpp:23]release lock on key = %ld,lock = %ld,%ld,%ld,%ld\n",row->get_primary_key(),txnMng->decode_is_lock(row->_tid_word),txnMng->decode_ix_lock(row->_tid_word),txnMng->decode_s_lock(row->_tid_word),txnMng->decode_x_lock(row->_tid_word));
+    // printf("[rdma_opt_no_wait3.cpp:24]txn %ld release X lock on key = %ld,lock = %ld,%ld,%ld,%ld\n", txnMng->get_txn_id(),row->get_primary_key(),txnMng->decode_is_lock(row->_tid_word),txnMng->decode_ix_lock(row->_tid_word),txnMng->decode_s_lock(row->_tid_word),txnMng->decode_x_lock(row->_tid_word));
+
+    // printf("[rdma_opt_no_wait3.cpp:26]txn %ld release IX lock on node = %ld,lock = %ld,%ld,%ld,%ld\n", txnMng->get_txn_id(),leaf_offset,txnMng->decode_is_lock(faa_result),txnMng->decode_ix_lock(faa_result),txnMng->decode_s_lock(faa_result),txnMng->decode_x_lock(faa_result));
 
 }
 
@@ -42,11 +44,14 @@ void RDMA_opt_no_wait3::remote_write_and_unlock(yield_func_t &yield,RC rc, TxnMa
     uint64_t faa_num = -1;
     uint64_t faa_result = txnMng->faa_remote_content(yield,loc,off,faa_num,cor_id);
 
+    // printf("[rdma_opt_no_wait3.cpp:47]txn %ld release IX lock on node = %ld,lock = %ld,%ld,%ld,%ld\n", txnMng->get_txn_id(),off,txnMng->decode_is_lock(faa_result),txnMng->decode_ix_lock(faa_result),txnMng->decode_s_lock(faa_result),txnMng->decode_x_lock(faa_result));
+
     //release range lock(IX)
     uint64_t leaf_offset = access->leaf_offset;
     faa_num = (-1)<<32;
     faa_result = txnMng->faa_remote_content(yield,loc,leaf_offset,faa_num,cor_id);
 
+    // printf("[rdma_opt_no_wait3.cpp:52]txn %ld release IX lock on node = %ld,lock = %ld,%ld,%ld,%ld\n", txnMng->get_txn_id(),leaf_offset,txnMng->decode_is_lock(faa_result),txnMng->decode_ix_lock(faa_result),txnMng->decode_s_lock(faa_result),txnMng->decode_x_lock(faa_result));
 }
 
 void RDMA_opt_no_wait3::unlock_read(yield_func_t &yield, RC rc, row_t * row , TxnManager * txnMng, uint64_t leaf_offset, uint64_t cor_id){
@@ -79,7 +84,7 @@ void RDMA_opt_no_wait3::remote_unlock_read(yield_func_t &yield, RC rc, TxnManage
 void RDMA_opt_no_wait3::unlock_range_read(yield_func_t &yield, uint64_t cor_id,TxnManager * txnMng ,uint64_t remote_server, uint64_t range_offset){
     //0x00S0
     uint64_t faa_num = (uint64_t)((-1)<<16);
-    faa_num = faa_num*(-1);
+    // faa_num = faa_num*(-1);
     uint64_t faa_result = txnMng->faa_remote_content(yield,remote_server,range_offset,faa_num,cor_id);
     // if(txnMng->decode_x_lock(faa_result)!=0){
     //     printf("[rdma_opt_no_wait3.cpp:84]faa_result=%ld,IS=%ld,IX=%ld,S=%ld,X=%ld\n",faa_result,txnMng->decode_is_lock(faa_result),txnMng->decode_ix_lock(faa_result),txnMng->decode_s_lock(faa_result),txnMng->decode_x_lock(faa_result));
@@ -87,6 +92,7 @@ void RDMA_opt_no_wait3::unlock_range_read(yield_func_t &yield, uint64_t cor_id,T
 
     rdma_bt_node * remote_bt_node = txnMng->read_remote_bt_node(yield,remote_server,range_offset,cor_id);
     uint64_t tmp_intent = remote_bt_node->intent_lock;
+    // printf("[rdma_opt_no_wait3:95] txn %ld release S on node %ld success, faa_result=%ld,intent=%ld,IS=%ld,IX=%ld,s=%ld,x=%ld\n",txnMng->get_txn_id(),range_offset,faa_result,tmp_intent,txnMng->decode_is_lock(tmp_intent),txnMng->decode_ix_lock(tmp_intent),txnMng->decode_s_lock(tmp_intent),txnMng->decode_x_lock(tmp_intent));
     if(txnMng->decode_x_lock(tmp_intent)!=0){
         // printf("[rdma_opt_no_wait3:90]faa_result=%ld,intent=%ld,IS=%ld,IX=%ld,s=%ld,x=%ld\n",faa_result,tmp_intent,txnMng->decode_is_lock(tmp_intent),txnMng->decode_ix_lock(tmp_intent),txnMng->decode_s_lock(tmp_intent),txnMng->decode_x_lock(tmp_intent));
         // printf("[rdma_opt_no_wait3:91]intent=%ld,IS=%ld,IX=%ld,s=%ld,x=%ld\n",tmp_intent,txnMng->decode_is_lock(tmp_intent),txnMng->decode_ix_lock(tmp_intent),txnMng->decode_s_lock(tmp_intent),txnMng->decode_x_lock(tmp_intent));

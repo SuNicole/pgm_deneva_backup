@@ -624,4 +624,6 @@ extern pthread_mutex_t * accum_faa_mutex;
 extern map<uint64_t, uint64_t> txn_status;//0 - uncommitted;1 - committed;2 - abort
 extern uint64_t my_root_offset;
 
+extern uint64_t btree_layer;
+
 #endif
