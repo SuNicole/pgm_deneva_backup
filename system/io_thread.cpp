@@ -68,6 +68,12 @@ void InputThread::setup() {
 				continue;
 			}
 #endif
+                if(msg->rtype == IDX_INFO){
+                    // g_init_done[msg->return_node_id] = true;
+                    // printf("Received IDX_INFO from node %ld\n",msg->return_node_id);
+                    // fflush(stdout);
+                    // simulation->process_setup_msg();
+                }
 				work_queue.enqueue(get_thd_id(),msg,false);
 			}
 			msgs->erase(msgs->begin());

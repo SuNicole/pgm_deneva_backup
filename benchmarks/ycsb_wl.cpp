@@ -25,6 +25,7 @@
 #include "index_btree.h"
 #include "index_rdma.h"
 #include "index_rdma_btree.h"
+#include "index_learned.h"
 #include "catalog.h"
 #include "manager.h"
 #include "row_lock.h"
@@ -32,8 +33,13 @@
 #include "row_mvcc.h"
 #include "mem_alloc.h"
 #include "query.h"
+#include "msg_queue.h"
 
 int YCSBWorkload::next_tid;
+
+void copy_index_to_buf(PGMIndex<uint64_t,64> *learn_index,char *buf,uint64_t &size){
+    // learn_index->copy_to_buf(buf,size);
+}
 
 RC YCSBWorkload::init() {
 	Workload::init();
@@ -57,8 +63,9 @@ RC YCSBWorkload::init() {
 
 	init_table_parallel();
 	printf("Done\n");
-
+#if INDEX_STRUCT == IDX_RDMA_BTREE
     the_index->get_btree_layer();
+#endif
 	fflush(stdout);
 //	init_table();
 	return RCOK;
@@ -161,6 +168,42 @@ void YCSBWorkload::init_table_parallel() {
 		}
 	}
 	enable_thread_mem_pool = false;
+
+ #if LEARN_INDEX == 1//build learn index on basis of btree index
+    uint64_t leaf_num = 0;
+    
+    uint64_t vector_size = (g_synth_table_size/g_node_cnt)/range_size;
+    std::vector<uint64_t> leaf_fisrt_key(vector_size);
+    for(int i = 0;i < g_synth_table_size/g_node_cnt;i++){
+        if(the_index->leaf_index_info[i].key_cnt == 0)break;
+        leaf_fisrt_key[leaf_num] = the_index->leaf_index_info[i].keys[0];
+        leaf_num++;
+    }
+    //训练
+    // pgm::PGMIndex<uint64_t, 64> *index = new pgm::PGMIndex<uint64_t, 64>(leaf_fisrt_key);
+    pgm_index = (pgm::PGMIndex<uint64_t, 64>**)malloc(sizeof(pgm::PGMIndex<uint64_t, 64>*) * g_node_cnt);
+    for(int i = 0;i<g_node_cnt;i++){
+        pgm_index[i] = (pgm::PGMIndex<uint64_t, 64>*)malloc(sizeof(pgm::PGMIndex<uint64_t, 64>));
+        printf("[ycsb_wl.cpp:186]segment size of %d is %ld\n",i,pgm_index[i]->get_segment().size());
+    }
+    pgm_index[g_node_id] = new pgm::PGMIndex<uint64_t, 64>(leaf_fisrt_key);
+    const int epsilon = 128; 
+
+    auto range = pgm_index[g_node_id]->search(0);
+    printf("**************\nsearch 0 in pos %d,%d\n",range.hi,range.pos);
+    range = pgm_index[g_node_id]->search(1);
+    printf("search 1 in pos %d,%d\n",range.hi,range.pos); 
+    range = pgm_index[g_node_id]->search(range_size + 1);
+    printf("search range_size + 1 in pos %d,%d\n",range.hi,range.pos);
+    
+   
+
+    
+
+    // index.init(leaf_fisrt_key);
+
+    //训练完成
+#endif
 }
 
 void * YCSBWorkload::init_table_slice() {

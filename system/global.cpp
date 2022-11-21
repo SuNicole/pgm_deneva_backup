@@ -296,9 +296,10 @@ UInt64 tuple_count = 0;
 UInt64 max_tuple_size = 0;
 pthread_mutex_t * RDMA_MEMORY_LATCH;
 
-UInt64 rdma_buffer_size = 18*(1024*1024*1024L);
+UInt64 rdma_buffer_size = 15*(1024*1024*1024L);
 UInt64 client_rdma_buffer_size = 800*(1024*1024L);
 UInt64 rdma_index_size = (1024*1024*1024L);
+UInt64 rdma_pgm_index_para_size = (50*1024*1024L);
 
 // MAAT
 UInt64 rdma_txntable_size = 30*1024*1024; //4*(1024*1024*1024L);//30*1024*1024;
@@ -440,3 +441,7 @@ map<uint64_t, uint64_t> txn_status;//0 - uncommitted;1 - committed;2 - abort
 uint64_t my_root_offset;
 
 uint64_t btree_layer = 1;
+
+pgm::PGMIndex<uint64_t,64> **pgm_index;
+pgm::PGMIndex<uint64_t,64> *local_pgm_index;
+int range_size = BTREE_ORDER;

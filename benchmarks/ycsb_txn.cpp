@@ -30,6 +30,7 @@
 #include "index_btree.h"
 #include "index_rdma.h"
 #include "index_rdma_btree.h"
+#include "index_learned.h"
 #include "transport/rdma.h"
 #include "catalog.h"
 #include "manager.h"
@@ -58,6 +59,7 @@
 #include "transport.h"
 #include "qps/op.hh"
 #include "stats.h"
+#include "../pgm/include/pgm/pgm_index.hpp"
 
 void YCSBTxnManager::init(uint64_t thd_id, Workload * h_wl) {
 	TxnManager::init(thd_id, h_wl);
@@ -138,8 +140,10 @@ RC YCSBTxnManager::run_txn(yield_func_t &yield, uint64_t cor_id) {
 #if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == OPT_NO_WAIT3
 	YCSBQuery* ycsb_query = (YCSBQuery*) query;
     if(ycsb_query->query_type == YCSB_CONTINUOUS){
+        //范围查询
         if(rdma_one_side()){
             // if((get_sys_clock() - simulation->run_starttime) >= g_warmup_timer)printf("[ycsb_txn.cpp:144]continuous txn\n");
+            //范围查询实际操作
             rc = run_continuous_txn(yield,cor_id);
         }else{
             // if((get_sys_clock() - simulation->run_starttime) >= g_warmup_timer)printf("[ycsb_txn.cpp:144]continuous txn\n");
@@ -147,6 +151,7 @@ RC YCSBTxnManager::run_txn(yield_func_t &yield, uint64_t cor_id) {
         }
     }else{
         // if((get_sys_clock() - simulation->run_starttime) >= g_warmup_timer)printf("[ycsb_txn.cpp:148]normal txn\n");
+        //访问离散数据
         while(rc == RCOK && !is_done()) {
             rc = run_txn_state(yield, cor_id);
         }
@@ -319,15 +324,17 @@ itemid_t* YCSBTxnManager::ycsb_read_remote_index(yield_func_t &yield, ycsb_reque
 	uint64_t thd_id = get_thd_id();
     itemid_t* item;
 #if RDMA_ONE_SIDE
-    #if INDEX_STRUCT != IDX_RDMA_BTREE
-        //get corresponding index
+    #if INDEX_STRUCT == IDX_RDMA_BTREE
+        item = read_remote_btree_index(yield, loc,req->key, cor_id);
+    #elif INDEX_STRUCT == IDX_LEARNED
+        item = read_remote_learn_index(yield, loc,req->key, cor_id);
+    #else
+          //get corresponding index
     // uint64_t index_key = 0;
         uint64_t index_key = req->key / g_node_cnt;
         uint64_t index_addr = (index_key) * sizeof(IndexInfo);
         uint64_t index_size = sizeof(IndexInfo);
         item = read_remote_index(yield, loc, index_addr,req->key, cor_id);
-    #else
-        item = read_remote_btree_index(yield, loc,req->key, cor_id);
     #endif
 #endif
 	return item;
@@ -335,7 +342,6 @@ itemid_t* YCSBTxnManager::ycsb_read_remote_index(yield_func_t &yield, ycsb_reque
 
 RC YCSBTxnManager::send_remote_one_side_request(yield_func_t &yield, ycsb_request * req, row_t *& row_local, uint64_t cor_id) {
 	// get the index of row to be operated
-	
 	itemid_t * m_item;
 #if BATCH_INDEX_AND_READ
 	m_item = reqId_index.find(next_record_id)->second;
@@ -407,6 +413,7 @@ void YCSBTxnManager::copy_remote_requests(YCSBQueryMessage * msg) {
 #endif
 }
 
+#if INDEX_STRUCT == IDX_RDMA_BTREE
 RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
 #if CC_ALG == RDMA_OPT_NO_WAIT3
     RC rc = RCOK;
@@ -434,6 +441,7 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
         }
         if(i != g_node_id){
             uint64_t left_range_node_offset = 0;
+            //TODO: 远程
             left_range_index_node = read_left_index_node(yield,cor_id,i,range_first_key,left_range_node_offset);
 
             UInt32 num_of_key = left_range_index_node->num_keys;
@@ -541,6 +549,7 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
             // printf("[ycsb_txn.cpp:509]req->key = %ld , first_key = %ld\n",req->key,range_first_key);
             rdma_bt_node * leaf_node;
             part_id = _wl->key_to_part(range_first_key);
+            //TODO : 本地范围查询index查找
             leaf_node = index_node_read(_wl->the_index, range_first_key, part_id);
             assert(part_id == g_node_id);
             UInt32 num_of_key = leaf_node->num_keys;
@@ -593,6 +602,175 @@ RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
     return rc;
 #endif
 }
+#else
+    RC YCSBTxnManager::run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
+#if CC_ALG == RDMA_OPT_NO_WAIT3
+    RC rc = RCOK;
+    YCSBQuery* ycsb_query = (YCSBQuery*) query;
+    ycsb_request * req = ycsb_query->requests[0];
+    uint64_t first_key = req->key;
+    uint64_t last_key = req->key + g_req_per_query - 1;
+
+
+    uint64_t part_id = _wl->key_to_part( req->key );
+    uint64_t remote_server = GET_NODE_ID(part_id);//location server of first_key 
+
+    LeafIndexInfo * left_range_index_node;
+    for(int i = 0;i < g_node_cnt;i++){
+        uint64_t range_first_key = req->key;
+
+        if(i >= remote_server)range_first_key = range_first_key + (i - remote_server);
+        else{
+            range_first_key = range_first_key+ (i - remote_server);
+            if(range_first_key < 0)range_first_key = 0;
+            //TODO - what is the start key of data?
+        }
+        if(i != g_node_id){
+            uint64_t left_range_node_offset = 0;
+            //TODO: 远程
+            left_range_index_node = read_left_leaf_index_node(yield,cor_id,i,range_first_key,left_range_node_offset);
+
+            UInt32 num_of_key = left_range_index_node->key_cnt;
+            assert(left_range_index_node->keys[num_of_key - 1] >= range_first_key);
+            assert(left_range_index_node->keys[0] <= range_first_key);
+
+            if(s_lock_content(left_range_index_node->intent_lock)){
+                printf("[ycsb_txn.cpp:437]\n");
+                return Abort;
+            }
+
+            //acquire S lock on range
+            LeafIndexInfo * origin_learn_node = read_remote_learn_node(yield,i,left_range_node_offset,cor_id);
+            // assert(origin_learn_node->keys[0] == left_range_index_node->keys[0]);
+
+            uint64_t add_value = 1;
+            add_value = add_value<<16;//0x0010
+            uint64_t before_faa = 0;
+            before_faa = faa_remote_content(yield,i,left_range_node_offset,add_value,cor_id);
+
+            if(s_lock_content(before_faa)){
+                add_value = -1;
+                add_value = add_value<<16;//0x0010
+                before_faa = faa_remote_content(yield,i,left_range_node_offset,add_value,cor_id);
+                printf("[ycsb_txn.cpp:467]\n");
+                return Abort;
+            }
+
+            //record
+            txn->range_node_set[txn->locked_range_num] = left_range_node_offset;
+            txn->server_set[txn->locked_range_num] = i;
+            txn->locked_range_num = txn->locked_range_num + 1;
+
+            int j = 0;
+            for(j = 0;j < num_of_key;j++){
+                if(left_range_index_node->keys[j] < first_key)continue;
+                if(left_range_index_node->keys[j] > last_key)break;
+                uint64_t remote_offset = left_range_index_node->offsets[j];
+                row_t * test_row = read_remote_row(yield,i,remote_offset,cor_id);
+                itemid_t *m_item = (itemid_t *)malloc(sizeof(itemid_t));
+                m_item->offset = remote_offset;
+                rc = preserve_access(row,m_item,test_row,RD,test_row->get_primary_key(),i);
+            }
+
+            int subscript = (left_range_node_offset - rdma_pgm_index_para_size)/sizeof(LeafIndexInfo);
+            uint64_t index_cnt = (g_synth_table_size/g_node_cnt)/RANGE_SIZE;
+            LeafIndexInfo * next_index_node = left_range_index_node;
+            while(next_index_node && (subscript < index_cnt)){
+                subscript++;
+                uint64_t remote_offset = rdma_pgm_index_para_size+sizeof(LeafIndexInfo) * (subscript);
+                next_index_node = read_remote_learn_node(yield,i,remote_offset,cor_id);
+                num_of_key = next_index_node->key_cnt;
+                if(next_index_node->keys[0] > last_key)break;
+                // assert(next_index_node->keys[0] > range_first_key);
+
+                if(s_lock_content(next_index_node->intent_lock)){
+                    printf("[ycsb_txn.cpp:499]\n");
+                    return Abort;
+                }
+
+                //acquire S lock on range
+                uint64_t add_value = 1;
+                add_value = add_value<<16;//0x0010
+                uint64_t before_faa = faa_remote_content(yield,i,remote_offset,add_value,cor_id);
+
+                if(s_lock_content(next_index_node->intent_lock)){
+                    add_value = -1;
+                    add_value = add_value<<16;//0x0010
+                    before_faa = faa_remote_content(yield,i,remote_offset,add_value,cor_id);
+                    printf("[ycsb_txn.cpp:512]\n");
+                    return Abort;
+                }
+
+                txn->range_node_set[txn->locked_range_num] = remote_offset;
+                txn->server_set[txn->locked_range_num] = i;
+                txn->locked_range_num = txn->locked_range_num + 1;
+                
+                int j = 0;
+                for(j = 0;j < num_of_key;j++){
+                    if(next_index_node->keys[j] < range_first_key)continue;
+                    if(next_index_node->keys[j] > last_key)break;
+                    uint64_t remote_offset = next_index_node->offsets[j];
+                    row_t * test_row = read_remote_row(yield,i,remote_offset,cor_id);
+                    itemid_t *m_item = (itemid_t *)malloc(sizeof(itemid_t));
+                    m_item->offset = remote_offset;
+                    rc = preserve_access(row,m_item,test_row,RD,test_row->get_primary_key(),i);
+                }
+                
+            }
+            
+        }else{
+            //TODO local txn
+            LeafIndexInfo * leaf_node;
+            part_id = _wl->key_to_part(range_first_key);
+        
+            leaf_node = learn_index_node_read(_wl->the_index, range_first_key, part_id);
+            assert(part_id == g_node_id);
+            UInt32 num_of_key = leaf_node->key_cnt;
+
+            while(leaf_node && num_of_key != 0){
+                if(leaf_node->keys[0] > last_key || leaf_node->keys[num_of_key - 1] < first_key)break;
+                if(s_lock_content(leaf_node->intent_lock)){
+                    printf("[ycsb_txn.cpp:547]\n");
+                    return Abort;
+                }
+                //range lock(S)
+                uint64_t add_value = 1;
+                add_value = add_value<<16;//0x0010
+                uint64_t local_offset = (char*)leaf_node - rdma_global_buffer;
+                uint64_t before_faa = 0;
+                before_faa = faa_remote_content(yield,i,local_offset,add_value,cor_id);
+
+                if(s_lock_content(before_faa)){
+                    add_value = -1;
+                    add_value = add_value<<16;//0x0010
+                    before_faa = faa_remote_content(yield,i,local_offset,add_value,cor_id);
+                    return Abort;
+                }
+                txn->range_node_set[txn->locked_range_num] = (char *)leaf_node - rdma_global_buffer;
+                txn->server_set[txn->locked_range_num] = i;
+                txn->locked_range_num = txn->locked_range_num + 1;
+                //lock got, read data
+                for(int j = 0;j < num_of_key;j++){
+                  if(leaf_node->keys[j] < first_key)continue;
+                  if(leaf_node->keys[j] > last_key)break;
+                  row_t * new_row = (row_t *)(rdma_global_buffer + leaf_node->offsets[j]);
+
+                  itemid_t *m_item = (itemid_t *)malloc(sizeof(itemid_t));
+                  m_item->offset = leaf_node->offsets[j];
+                  m_item->leaf_node_offset = (char *)leaf_node - rdma_global_buffer;
+                  rc = preserve_access(row,m_item,new_row,RD,new_row->get_primary_key(),i);
+                }
+                int subscript = ((char*)leaf_node - rdma_global_buffer - rdma_pgm_index_para_size)/sizeof(LeafIndexInfo);
+                leaf_node = (LeafIndexInfo*)(rdma_global_buffer +rdma_pgm_index_para_size + sizeof(LeafIndexInfo)*(subscript + 1));
+                num_of_key = leaf_node->key_cnt;
+            }
+        }
+    }
+
+    return rc;
+#endif
+}
+#endif
 
 RC YCSBTxnManager::tcp_local_run_continuous_txn(yield_func_t &yield, uint64_t cor_id) {
     // printf("[ycsb_txn.cpp:544]tcp run continuous txn\n");
@@ -709,7 +887,9 @@ RC YCSBTxnManager::run_ycsb_0(yield_func_t &yield,ycsb_request * req,row_t *& ro
   itemid_t * m_item;
   INC_STATS(get_thd_id(),trans_benchmark_compute_time,get_sys_clock() - starttime);
   m_item = index_read(_wl->the_index, req->key, part_id);
+#if INDEX_STRUCT == IDX_RDMA_BTREE
   assert(m_item->parent != NULL);
+#endif
   starttime = get_sys_clock();
   row_t * row = ((row_t *)m_item->location);
 //   printf("[ycsb_txn.cpp:656]row->key = %ld,req->key = %ld\n",row->get_primary_key(),req->key);

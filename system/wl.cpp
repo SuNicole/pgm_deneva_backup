@@ -23,6 +23,7 @@
 #include "index_hash.h"
 #include "index_rdma.h"
 #include "index_rdma_btree.h"
+#include "index_learned.h"
 #include "mem_alloc.h"
 #include "row.h"
 #include "table.h"

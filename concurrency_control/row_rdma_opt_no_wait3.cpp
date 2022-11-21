@@ -17,7 +17,11 @@ void Row_rdma_opt_no_wait3::init(row_t * row){
 RC Row_rdma_opt_no_wait3::lock_get(yield_func_t &yield, access_t type, TxnManager * txn, row_t * row,uint64_t cor_id, uint64_t req_key,uint64_t leaf_node_offset) {  //本地加锁
     if(type == RD){
         //1.lock range(IS)
+#if INDEX_STRUCT == IDX_RDMA_BTREE
         rdma_bt_node *leaf_node = (rdma_bt_node*)(rdma_global_buffer + leaf_node_offset);
+#else
+        LeafIndexInfo *leaf_node = (LeafIndexInfo *)(rdma_global_buffer + leaf_node_offset);
+#endif
         uint64_t intent_lock = leaf_node->intent_lock;
 
         if(txn->is_lock_content(intent_lock)){
@@ -62,7 +66,11 @@ RC Row_rdma_opt_no_wait3::lock_get(yield_func_t &yield, access_t type, TxnManage
     }else if(type == WR){
         // assert(false);
         //lock range(IX)
+ #if INDEX_STRUCT == IDX_RDMA_BTREE
         rdma_bt_node *leaf_node = (rdma_bt_node*)(rdma_global_buffer + leaf_node_offset);
+#else
+        LeafIndexInfo *leaf_node = (LeafIndexInfo *)(rdma_global_buffer + leaf_node_offset);
+#endif
         uint64_t intent_lock = leaf_node->intent_lock;
 
         if(txn->ix_lock_content(intent_lock)){

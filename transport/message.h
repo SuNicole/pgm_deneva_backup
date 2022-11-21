@@ -30,6 +30,8 @@ class Message {
 public:
   virtual ~Message(){}
   static Message * create_message(char * buf);
+  static Message * create_message(char *buf,RemReqType get_rtype,uint64_t info_size);
+  static Message * create_message(char *buf,RemReqType get_rtype,PGMIndex<uint64_t,64>* pgm_index);
   static Message * create_message(BaseQuery * query, RemReqType rtype);
   static Message * create_message(TxnManager * txn, RemReqType rtype);
   static Message * create_message(uint64_t txn_id, RemReqType rtype);
@@ -76,6 +78,8 @@ public:
   virtual void copy_to_buf(char * buf) = 0;
   virtual void copy_to_txn(TxnManager * txn) = 0;
   virtual void copy_from_txn(TxnManager * txn) = 0;
+  virtual void copy_idx(PGMIndex<uint64_t,64>* pgm_index) = 0;
+  virtual void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index) = 0;
   virtual void init() = 0;
   virtual void release() = 0;
 };
@@ -90,6 +94,8 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 };
 
 class FinishMessage : public Message {
@@ -102,6 +108,8 @@ public:
   void init() {}
   void release() {}
   bool is_abort() { return rc == Abort;}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   uint64_t pid;
   RC rc;
@@ -126,6 +134,8 @@ public:
   void init() {}
   void release();
   void copy_from_record(LogRecord * record);
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   //Array<LogRecord*> log_records;
   LogRecord record;
@@ -140,6 +150,9 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
+
 };
 
 class LogFlushedMessage : public Message {
@@ -151,6 +164,8 @@ public:
   uint64_t get_size() {return sizeof(LogFlushedMessage);}
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
 };
 
@@ -164,6 +179,8 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   RC rc;
   uint64_t pid;
@@ -181,6 +198,8 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   RC rc;
 #if CC_ALG == MAAT || CC_ALG == WOOKONG || CC_ALG == DTA || CC_ALG == DLI_DTA || CC_ALG == DLI_DTA2 || CC_ALG == DLI_DTA3
@@ -204,6 +223,8 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   uint64_t pid;
   RC rc;
@@ -222,6 +243,8 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   RC rc;
 #if WORKLOAD == TPCC
@@ -239,6 +262,9 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
+
   uint64_t batch_id;
 };
 
@@ -251,9 +277,41 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   RC rc;
   uint64_t client_startts;
+};
+
+class IndexInfoMessage : public Message {
+public:
+  void copy_from_buf(char * buf);
+  void copy_to_buf(char * buf);
+  void copy_idx_to_buf(char * buf,uint64_t info_size);
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index);
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index);
+  void copy_from_txn(TxnManager * txn);
+  void copy_to_txn(TxnManager * txn);
+  uint64_t get_size();
+  void init() {
+    size = 0;
+    // for(int i = 0;i<10;i++){
+    //     segments[i].intercept = 0;
+    //     segments[i].key = 0;
+    //     segments[i].slope = 0;
+    //     levels_offsets[i] = 0;
+    // }
+  }
+  void release() {size = 0;}
+
+//  memcpy(tmp_buf,&pgm_index[g_node_id],size);
+//   pgm::PGMIndex<uint64_t,64> pgm_index_msg_info;
+  size_t n;                          
+  uint64_t first_key;                        
+  vector<pgm::PGMIndex<uint64_t,64>::Segment> segments;      
+  vector<size_t> levels_offsets; 
+  uint64_t size;
 };
 
 class ClientQueryMessage : public Message {
@@ -266,6 +324,8 @@ public:
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   uint64_t pid;
   uint64_t ts;
@@ -290,6 +350,8 @@ public:
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   Array<ycsb_request*> requests;
   YCSBQueryType ycsb_query_type;
@@ -305,6 +367,8 @@ public:
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   uint64_t txn_type;
 	// common txn input for both payment & new-order
@@ -339,6 +403,8 @@ public:
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   uint64_t txn_type;
 
@@ -364,6 +430,8 @@ class DAClientQueryMessage : public ClientQueryMessage {
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   DATxnType txn_type;
 	uint64_t trans_id;
@@ -384,6 +452,8 @@ public:
   uint64_t get_size();
   void init() {}
   void release() {}
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   uint64_t pid;
 #if CC_ALG == WAIT_DIE || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == TIMESTAMP || CC_ALG == MVCC || CC_ALG == DTA || CC_ALG == WOOKONG || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == CICADA || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_MOCC || CC_ALG == RDMA_OPT_WAIT_DIE
@@ -411,6 +481,8 @@ public:
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
  Array<ycsb_request*> requests;
   YCSBQueryType ycsb_msg_query_type;
@@ -425,6 +497,8 @@ public:
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   uint64_t txn_type;
   uint64_t state;
@@ -460,6 +534,8 @@ public:
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   uint64_t txn_type;
   uint64_t state;
@@ -484,6 +560,8 @@ class DAQueryMessage : public QueryMessage {
   uint64_t get_size();
   void init();
   void release();
+  void copy_idx(PGMIndex<uint64_t,64>* pgm_index){}
+  void copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){}
 
   DATxnType txn_type;
 	uint64_t trans_id;

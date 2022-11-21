@@ -133,6 +133,8 @@ public:
   uint64_t x_content_abort;
   uint64_t ix_content_abort;
 
+  uint64_t remote_index_get_operation;
+
   // Transaction stats
   double txn_total_process_time;
   double txn_process_time;

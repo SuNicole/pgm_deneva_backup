@@ -48,12 +48,14 @@
 #include "txn_table.h"
 #include "logger.h"
 #include "sim_manager.h"
+#include "../pgm/include/pgm/pgm_index.hpp"
 
 #include <boost/lockfree/queue.hpp>
 #include "da_block_queue.h"
 #include "src/allocator_master.hh"
 #include "lib.hh"
 using namespace std;
+using namespace pgm;
 
 #ifdef USE_RDMA
   #include "qps/rc_recv_manager.hh"
@@ -356,6 +358,7 @@ extern pthread_mutex_t * RDMA_MEMORY_LATCH;
 extern uint64_t rdma_buffer_size;
 extern uint64_t client_rdma_buffer_size;
 extern uint64_t rdma_index_size;
+extern UInt64 rdma_pgm_index_para_size ;
 // MAAT
 extern uint64_t rdma_txntable_size;
 extern uint64_t row_set_length;
@@ -481,6 +484,7 @@ enum RemReqType {
     RQRY_CONT,
     RFIN,
     CRFIN,
+    IDX_INFO,
     RLK_RSP,
     RULK_RSP,
     RQRY_RSP,
@@ -592,6 +596,8 @@ enum RecordStatus {COMMITED = 0, ABORTED, PENDING};
 #define INDEX       IndexRdmaBtree
 // #elif (INDEX_STRUCT == IDX_RDMA_TPCC)
 // #define INDEX       IndexRdmaTpcc
+#elif (INDEX_STRUCT == IDX_LEARNED)
+#define INDEX       IndexLearned
 #else
 #define INDEX		IndexRdma
 #endif
@@ -626,4 +632,7 @@ extern uint64_t my_root_offset;
 
 extern uint64_t btree_layer;
 
+extern pgm::PGMIndex<uint64_t,64> **pgm_index;
+extern pgm::PGMIndex<uint64_t,64> *local_pgm_index;
+extern int range_size;
 #endif

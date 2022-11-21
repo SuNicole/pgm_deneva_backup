@@ -33,6 +33,7 @@
 #include "index_hash.h"
 #include "index_rdma.h"
 #include "index_rdma_btree.h"
+#include "index_learned.h"
 #include "maat.h"
 #include "manager.h"
 #include "mem_alloc.h"
@@ -443,6 +444,10 @@ void TxnManager::init(uint64_t thd_id, Workload * h_wl) {
 #if CC_ALG == RDMA_MAAT || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT
     rdma_txn_table.release(get_thd_id(), get_txn_id());
 #endif
+
+#if CC_ALG == RDMA_OPT_NO_WAIT3
+    remote_operate_num = 0;
+#endif
 	registed_ = false;
 	txn_ready = true;
 	twopl_wait_start = 0;
@@ -499,6 +504,9 @@ void TxnManager::reset() {
 #if CC_ALG == RDMA_MAAT || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT
     rdma_txn_table.release(get_thd_id(), get_txn_id());
 #endif
+#if CC_ALG == RDMA_OPT_NO_WAIT3
+    remote_operate_num = 0;
+#endif
 	assert(txn);
 	assert(query);
 	txn->reset(get_thd_id());
@@ -550,6 +558,9 @@ void TxnManager::release() {
   memset(write_set, 0, 100);
   // mem_allocator.free(write_set, sizeof(int) * 100);
 #endif
+#if CC_ALG == RDMA_OPT_NO_WAIT3
+    remote_operate_num = 0;
+#endif 
 	txn_ready = true;
 }
 
@@ -951,6 +962,7 @@ void TxnManager::commit_stats() {
 	uint64_t timespan_short = commit_time - txn_stats.restart_starttime;
 	uint64_t timespan_long  = commit_time - txn_stats.starttime;
 	INC_STATS(get_thd_id(),total_txn_commit_cnt,1);
+	INC_STATS(get_thd_id(),remote_index_get_operation,remote_operate_num);
 
 	uint64_t warmuptime = get_sys_clock() - simulation->run_starttime;
 	DEBUG("Commit_stats execute_time %ld warmup_time %ld\n",warmuptime,g_warmup_timer);
@@ -3989,6 +4001,19 @@ rdma_bt_node *TxnManager::index_node_read(INDEX *index, idx_key_t key, int part_
 
 	return leaf_node;
 }
+
+LeafIndexInfo *TxnManager::learn_index_node_read(INDEX *index, idx_key_t key, int part_id) {
+	uint64_t starttime = get_sys_clock();
+
+	LeafIndexInfo * leaf_node;
+	index->learn_index_node_read(key, leaf_node, part_id, get_thd_id());
+
+	uint64_t t = get_sys_clock() - starttime;
+	INC_STATS(get_thd_id(), txn_index_time, t);
+	//txn_time_idx += t;
+
+	return leaf_node;
+}
 #endif
 
 itemid_t *TxnManager::index_read(INDEX *index, idx_key_t key, int part_id, int count) {
@@ -4668,9 +4693,11 @@ rdma_bt_node * TxnManager::read_left_index_node(yield_func_t &yield,uint64_t cor
     uint64_t remote_index_offset = 0;
     //get offset of root of btree
     remote_offset = cas_remote_content(target_server,0,0,1);
+    remote_operate_num++;
     assert(remote_offset != 0);
     remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id);
     left_range_node_offset = remote_offset;  
+    remote_operate_num++;
     
     while(remote_bt_node->is_leaf == false){
         int i = 0;
@@ -4682,10 +4709,79 @@ rdma_bt_node * TxnManager::read_left_index_node(yield_func_t &yield,uint64_t cor
         remote_offset = remote_bt_node->child_offsets[i];
         mem_allocator.free(remote_bt_node,0);
         remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id);
+        remote_operate_num++;
         left_range_node_offset = remote_offset;  
     }
     
     return remote_bt_node;
+}
+
+LeafIndexInfo * TxnManager::read_left_leaf_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,uint64_t left_key,uint64_t &left_range_node_offset){
+    auto position = pgm_index[target_server]->search(left_key);
+    int subscript = position.pos;
+    LeafIndexInfo * remote_learn_node;
+    uint64_t remote_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+    uint64_t remote_index_offset = 0;
+    
+    remote_learn_node = read_remote_learn_node(yield,target_server,remote_offset,cor_id);  
+    remote_operate_num++;
+    
+    bool get_data = false;
+    int high = subscript+64 < ((g_synth_table_size/g_node_cnt)/range_size)?subscript+64:(g_synth_table_size/g_node_cnt)/range_size;
+    int low = subscript-64 > 0 ? subscript-64 : 0;
+
+    while(get_data == false){
+        int cnt = remote_learn_node->key_cnt;
+        // printf("[txn.cpp:4720]key = %ld,subscript = %ld,first_key = %ld,low = %ld,high = %ld\n",left_key,subscript,remote_learn_node->keys[0],low,high);
+        if(left_key >= remote_learn_node->keys[0] && left_key <= remote_learn_node->keys[cnt - 1]){
+            for(int i = 0;i<remote_learn_node->key_cnt;i++){
+                if(remote_learn_node->keys[i] == left_key){       
+                    left_range_node_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+                    get_data = true;
+                    break;
+                }
+            }
+        }
+        if(get_data == true)break;
+
+        if(subscript == 0){
+            low = 0;
+            high = 64;
+            subscript = (low + high)/2;
+            remote_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+            mem_allocator.free(remote_learn_node,sizeof(LeafIndexInfo));
+            remote_learn_node = read_remote_learn_node(yield,target_server,remote_offset,cor_id); 
+            remote_operate_num++;
+            continue;
+        }
+        else if(subscript == ((g_synth_table_size/g_node_cnt)/range_size)){
+            high = ((g_synth_table_size/g_node_cnt)/range_size);
+            low = high -64;
+            subscript = (low + high)/2;
+            remote_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+            mem_allocator.free(remote_learn_node,sizeof(LeafIndexInfo));
+            remote_learn_node = read_remote_learn_node(yield,target_server,remote_offset,cor_id); 
+            remote_operate_num++;
+            continue;
+        }
+        if(left_key > remote_learn_node->keys[cnt - 1]){
+                low = subscript + 1;
+        }
+        else{
+                high = subscript - 1;
+        }
+        if(low > high)break;
+
+        subscript = (low + high)/2;
+        remote_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+        mem_allocator.free(remote_learn_node,sizeof(LeafIndexInfo));
+        remote_learn_node = read_remote_learn_node(yield,target_server,remote_offset,cor_id);  
+        remote_operate_num++;
+    }
+
+    assert(get_data == true);
+    
+    return remote_learn_node;
 }
 
 void TxnManager::read_continuous_index(yield_func_t &yield,int target_server, int batch_num,uint64_t *batch_key_vector, itemid_t **batch_index_vector, uint64_t cor_id){
@@ -4884,6 +4980,9 @@ row_t * TxnManager::read_remote_row(yield_func_t &yield, uint64_t target_server,
     return test_row;
 }
 
+// rdma_bt_node * TxnManager::read_remote_bt_node(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t cor_id){}
+//TODO:读远程index节点信息
+
 rdma_bt_node * TxnManager::read_remote_bt_node(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t cor_id){
     uint64_t operate_size = sizeof(rdma_bt_node);
     uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
@@ -4948,6 +5047,74 @@ rdma_bt_node * TxnManager::read_remote_bt_node(yield_func_t &yield, uint64_t tar
     return remote_node;
 }
 
+LeafIndexInfo * TxnManager::read_remote_learn_node(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t cor_id){
+    uint64_t operate_size = sizeof(LeafIndexInfo);
+
+    int count = 0;
+    count = (target_server - 1)*(g_req_per_query/g_node_cnt + 2);
+
+    uint64_t thd_id = get_thd_id() + cor_id * g_total_thread_cnt;
+    char *test_buf = Rdma::get_index_client_memory(thd_id);
+    memset(test_buf, 0, operate_size);
+    // assert((rdma_bt_node*)test_buf->intent_lock == 0);
+    uint64_t starttime;
+	uint64_t endtime;
+	starttime = get_sys_clock();
+    auto res_s = rc_qp[target_server][thd_id]->send_normal(
+		{.op = IBV_WR_RDMA_READ,
+		.flags = IBV_SEND_SIGNALED,
+		.len = operate_size,
+		.wr_id = 0},
+		{.local_addr = reinterpret_cast<rdmaio::RMem::raw_ptr_t>(test_buf),
+		.remote_addr = remote_offset,
+		.imm_data = 0});
+	RDMA_ASSERT(res_s == rdmaio::IOCode::Ok);
+	// INC_STATS(get_thd_id(), worker_oneside_cnt, 1);
+#if USE_COROUTINE
+	// h_thd->un_res_p.push(std::make_pair(target_server, thd_id));
+		
+	uint64_t waitcomp_time;
+	std::pair<int,ibv_wc> res_p;
+	INC_STATS(get_thd_id(), worker_process_time, get_sys_clock() - h_thd->cor_process_starttime[cor_id]);
+	do {
+		h_thd->start_wait_time = get_sys_clock();
+		h_thd->last_yield_time = get_sys_clock();
+		// printf("do\n");
+		yield(h_thd->_routines[((cor_id) % COROUTINE_CNT) + 1]);
+		uint64_t yield_endtime = get_sys_clock();
+		INC_STATS(get_thd_id(), worker_yield_cnt, 1);
+		INC_STATS(get_thd_id(), worker_yield_time, yield_endtime - h_thd->last_yield_time);
+		INC_STATS(get_thd_id(), worker_idle_time, yield_endtime - h_thd->last_yield_time);
+		res_p = rc_qp[target_server][thd_id]->poll_send_comp();
+		waitcomp_time = get_sys_clock();
+		
+		INC_STATS(get_thd_id(), worker_idle_time, waitcomp_time - yield_endtime);
+		INC_STATS(get_thd_id(), worker_waitcomp_time, waitcomp_time - yield_endtime);
+	} while (res_p.first == 0);
+	h_thd->cor_process_starttime[cor_id] = get_sys_clock();
+#else
+	auto res_p = rc_qp[target_server][thd_id]->wait_one_comp();
+	RDMA_ASSERT(res_p == rdmaio::IOCode::Ok);
+    endtime = get_sys_clock();
+	INC_STATS(get_thd_id(), worker_idle_time, endtime-starttime);
+	INC_STATS(get_thd_id(), worker_waitcomp_time, endtime-starttime);
+	DEL_STATS(get_thd_id(), worker_process_time, endtime-starttime);
+#endif
+
+    LeafIndexInfo* remote_node = (LeafIndexInfo *)mem_allocator.alloc(sizeof(LeafIndexInfo));
+    for(int i = 0;i < BTREE_ORDER;i ++){
+        remote_node->offsets[i] = ((LeafIndexInfo*)test_buf)->offsets[i];
+        remote_node->keys[i] = ((LeafIndexInfo*)test_buf)->keys[i];
+    }
+    remote_node->intent_lock = ((LeafIndexInfo*)test_buf)->intent_lock;
+    remote_node->key_cnt = ((LeafIndexInfo*)test_buf)->key_cnt;
+    // remote_node->parent_offset = ((rdma_bt_node*)test_buf)->parent_offset;
+    // remote_node->next_node_offset = ((rdma_bt_node*)test_buf)->next_node_offset;
+    // remote_node->is_leaf = ((rdma_bt_node*)test_buf)->is_leaf;
+
+    return remote_node;
+}
+
 
 itemid_t * TxnManager::read_remote_btree_index(yield_func_t &yield, uint64_t target_server,uint64_t key, uint64_t cor_id){
     rdma_bt_node * remote_bt_node;
@@ -4955,8 +5122,10 @@ itemid_t * TxnManager::read_remote_btree_index(yield_func_t &yield, uint64_t tar
     uint64_t remote_index_offset = 0;
     //get offset of root of btree
     remote_offset = cas_remote_content(target_server,0,0,1);
+    remote_operate_num++;
     assert(remote_offset != 0);
-    remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id);  
+    remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id); 
+    remote_operate_num++;
     // printf("[txn.cpp:4568]my_root_offset = %ld,remote_root_offset = %ld,remote_root_num_keys = %ld\n",my_root_offset,remote_offset,remote_bt_node->num_keys); 
     // for(int i = 0;i < remote_bt_node->num_keys;i++){
     //     printf("%ld ",remote_bt_node->keys[i]);
@@ -4980,6 +5149,7 @@ itemid_t * TxnManager::read_remote_btree_index(yield_func_t &yield, uint64_t tar
         remote_offset = remote_bt_node->child_offsets[i];
         mem_allocator.free(remote_bt_node,0);
         remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id);
+        remote_operate_num++;
     }
     
     itemid_t* item = (itemid_t *)mem_allocator.alloc(sizeof(itemid_t));
@@ -4995,6 +5165,82 @@ itemid_t * TxnManager::read_remote_btree_index(yield_func_t &yield, uint64_t tar
         }
     }
     assert(item != NULL);
+    return item;
+
+ }
+
+ itemid_t * TxnManager::read_remote_learn_index(yield_func_t &yield, uint64_t target_server,uint64_t key, uint64_t cor_id){
+
+    auto position = pgm_index[target_server]->search(key);
+    int subscript = position.pos;
+    LeafIndexInfo * remote_learn_node;
+    uint64_t remote_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+    uint64_t remote_index_offset = 0;
+    
+    remote_learn_node = read_remote_learn_node(yield,target_server,remote_offset,cor_id);  
+    remote_operate_num++;
+    
+    bool get_data = false;
+    int high = subscript+64 < ((g_synth_table_size/g_node_cnt)/range_size)?subscript+64:(g_synth_table_size/g_node_cnt)/range_size;
+    int low = subscript-64 > 0 ? subscript-64 : 0;
+    itemid_t* item = (itemid_t *)mem_allocator.alloc(sizeof(itemid_t));
+
+    // printf("[txn.cpp:5098]key = %ld, pos = %ld\n",key,position.pos);
+
+    while(get_data == false){
+        // printf("[ycsb_txn.cpp:5101]key = %ld,subscript = %ld,first_key = %ld\n",key,subscript,remote_learn_node->keys[0]);
+        int cnt = remote_learn_node->key_cnt;
+        if(key >= remote_learn_node->keys[0] && key <= remote_learn_node->keys[cnt - 1]){
+            for(int i = 0;i<remote_learn_node->key_cnt;i++){
+                if(remote_learn_node->keys[i] == key){
+                    item->offset = remote_learn_node->offsets[i];
+                    item->leaf_node_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+                    item->range_lock =  remote_learn_node->intent_lock;
+                
+                    get_data = true;
+                    break;
+                }
+            }
+        }
+        if(get_data == true)break;
+
+        if(subscript == 0){
+            low = 0;
+            high = 64;
+            subscript = (low + high)/2;
+            remote_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+            mem_allocator.free(remote_learn_node,sizeof(LeafIndexInfo));
+            remote_learn_node = read_remote_learn_node(yield,target_server,remote_offset,cor_id); 
+            remote_operate_num++;
+            continue;
+        }
+        else if(subscript == ((g_synth_table_size/g_node_cnt)/range_size)){
+            high = ((g_synth_table_size/g_node_cnt)/range_size);
+            low = high -64;
+            subscript = (low + high)/2;
+            remote_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+            mem_allocator.free(remote_learn_node,sizeof(LeafIndexInfo));
+            remote_learn_node = read_remote_learn_node(yield,target_server,remote_offset,cor_id);
+            remote_operate_num++;
+            continue;
+        }
+        if(key > remote_learn_node->keys[cnt - 1]){
+                low = subscript + 1;
+        }
+        else{
+                high = subscript - 1;
+        }
+        if(low > high)break;
+
+        // printf("[txn.cpp:5140]low = %ld,high = %ld,key = %ld,pos = %ld\n",low,high,key,position.pos);
+        subscript = (low + high)/2;
+        remote_offset = sizeof(LeafIndexInfo)*subscript + rdma_pgm_index_para_size;
+        mem_allocator.free(remote_learn_node,sizeof(LeafIndexInfo));
+        remote_learn_node = read_remote_learn_node(yield,target_server,remote_offset,cor_id); 
+        remote_operate_num++;
+    }
+
+    assert(get_data == true);
     return item;
 
  }

@@ -89,8 +89,11 @@ void RDMA_opt_no_wait3::unlock_range_read(yield_func_t &yield, uint64_t cor_id,T
     // if(txnMng->decode_x_lock(faa_result)!=0){
     //     printf("[rdma_opt_no_wait3.cpp:84]faa_result=%ld,IS=%ld,IX=%ld,S=%ld,X=%ld\n",faa_result,txnMng->decode_is_lock(faa_result),txnMng->decode_ix_lock(faa_result),txnMng->decode_s_lock(faa_result),txnMng->decode_x_lock(faa_result));
     // }
-
+#if INDEX_STRUCT == IDX_RDMA_BTREE
     rdma_bt_node * remote_bt_node = txnMng->read_remote_bt_node(yield,remote_server,range_offset,cor_id);
+#elif INDEX_STRUCT == IDX_LEARNED
+    LeafIndexInfo * remote_bt_node = txnMng->read_remote_learn_node(yield,remote_server,range_offset,cor_id);
+#endif
     uint64_t tmp_intent = remote_bt_node->intent_lock;
     // printf("[rdma_opt_no_wait3:95] txn %ld release S on node %ld success, faa_result=%ld,intent=%ld,IS=%ld,IX=%ld,s=%ld,x=%ld\n",txnMng->get_txn_id(),range_offset,faa_result,tmp_intent,txnMng->decode_is_lock(tmp_intent),txnMng->decode_ix_lock(tmp_intent),txnMng->decode_s_lock(tmp_intent),txnMng->decode_x_lock(tmp_intent));
     if(txnMng->decode_x_lock(tmp_intent)!=0){

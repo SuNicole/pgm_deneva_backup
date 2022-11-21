@@ -25,6 +25,7 @@ class IndexHash;
 class index_btree;
 class IndexRdma;
 class IndexRdmaBtree;
+class IndexLearned;
 //class IndexRdmaTpcc;
 class Catalog;
 class lock_man;

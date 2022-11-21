@@ -1,8 +1,14 @@
-CC=/usr/bin/g++
+# CC=/usr/bin/g++
+
+# #CFLAGS=-Wall -Werror -std=c++11 -g3 -ggdb -O0 -fno-strict-aliasing -fno-omit-frame-pointer -D_GLIBCXX_USE_CXX11_ABI=0
+
+# CFLAGS=-w -std=c++1y -g3 -ggdb -O0 -fno-strict-aliasing -fno-omit-frame-pointer -I/usr/local/include -L/usr/local/lib -D_GLIBCXX_USE_CXX11_ABI=0 #-fsanitize=address
+#CC=/usr/bin/g++
+CC=/opt/rh/devtoolset-8/root/usr/bin/g++
 
 #CFLAGS=-Wall -Werror -std=c++11 -g3 -ggdb -O0 -fno-strict-aliasing -fno-omit-frame-pointer -D_GLIBCXX_USE_CXX11_ABI=0
 
-CFLAGS=-w -std=c++1y -g3 -ggdb -O0 -fno-strict-aliasing -fno-omit-frame-pointer -I/usr/local/include -L/usr/local/lib -D_GLIBCXX_USE_CXX11_ABI=0 #-fsanitize=address
+CFLAGS=-w -std=c++17 -g3 -ggdb -O0 -fno-strict-aliasing -fno-omit-frame-pointer -I/usr/local/include -L/usr/local/lib -D_GLIBCXX_USE_CXX11_ABI=0 #-fsanitize=address
 # CFLAGS=-Wall -std=c++1y -O3 -fno-strict-aliasing -I/usr/local/include -L/usr/local/lib -D_GLIBCXX_USE_CXX11_ABI=0
 # CFLAGS += -fsanitize=address -fno-stack-protector -fno-omit-frame-pointer
 NNMSG=./nanomsg-0.5-beta
@@ -10,8 +16,8 @@ RALLOC = ./rlib/lib
 
 .SUFFIXES: .o .cpp .h .cc
 
-SRC_DIRS = ./ ./benchmarks/ ./client/ ./concurrency_control/ ./storage/ ./transport/ ./system/ ./statistics/ ./rlibv2/ ./r2/ ./r2/src/#./unit_tests/ ./rlibv2/
-DEPS = -I. -I./benchmarks -I./client/ -I./concurrency_control -I./storage -I./transport -I./system -I./statistics -I./rlibv2/ -I./r2/ -I./r2/src/#-I./unit_tests -I./rlibv2/
+SRC_DIRS = ./ ./benchmarks/ ./client/ ./concurrency_control/ ./storage/ ./transport/ ./system/ ./statistics/ ./rlibv2/ ./r2/ ./r2/src/ #./unit_tests/ ./rlibv2/
+DEPS = -I. -I./benchmarks -I./client/ -I./concurrency_control -I./storage -I./transport -I./system -I./statistics -I./rlibv2/ -I./r2/ -I./r2/src/  #-I./unit_tests -I./rlibv2/
 
 CFLAGS += $(DEPS) -D NOGRAPHITE=1 -Wno-sizeof-pointer-memaccess -ljemalloc
 LDFLAGS = -Wall -L. -L$(NNMSG) -Wl,-rpath -pthread -lrt -lnanomsg -lanl -lcurl -ldl -lpthread -libverbs -ljemalloc -L$(RALLOC) -lssmalloc -lboost_system -lboost_coroutine#-lc++experimental

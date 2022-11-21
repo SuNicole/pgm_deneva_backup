@@ -26,6 +26,7 @@
 #include "index_btree.h"
 #include "index_rdma.h"
 #include "index_rdma_btree.h"
+#include "index_learned.h"
 #include "tpcc_const.h"
 #include "transport.h"
 #include "msg_queue.h"

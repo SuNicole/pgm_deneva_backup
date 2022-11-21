@@ -45,6 +45,8 @@ public:
 	uint64_t 	get_count() {return 0;}
     RC          index_remove(idx_key_t key) {return RCOK;};
     RC          get_btree_layer();
+    RC learn_index_node_read(idx_key_t key, LeafIndexInfo *&leaf_node, int part_id = -1, int thd_id = 0){}
+
 private:
 	// index structures may have part_cnt = 1 or PART_CNT.
 	uint64_t part_cnt;

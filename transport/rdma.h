@@ -23,8 +23,11 @@ class Rdma {
   void *create();
   void *connect();
   void init();
+  void send_pgm_para();
+  void get_pgm_para();
   static char *get_index_client_memory(uint64_t thd_id, int num = 1);
   static char *get_row_client_memory(uint64_t thd_id, int num = 1);
+  static char* get_param_client_memory(int num = 1);
   //static char *get_table_client_memory(uint64_t thd_id);
 
   static char *get_queue_client_memory();

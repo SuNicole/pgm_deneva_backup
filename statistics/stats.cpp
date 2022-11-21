@@ -154,6 +154,8 @@ void Stats_thd::clear() {
   x_content_abort = 0;
   ix_content_abort = 0;
 
+  remote_index_get_operation = 0;
+
   // Breakdown
   ts_alloc_time=0;
   abort_time=0;
@@ -656,14 +658,16 @@ void Stats_thd::print(FILE * outf, bool prog) {
   ",txn_write_cnt=%ld"
   ",record_write_cnt=%ld"
   ",parts_touched=%ld"
-          ",avg_parts_touched=%f",
+          ",avg_parts_touched=%f"
+          ",remote_index_get_operation=%ld"
+          ",avg_remote_index_get_operation=%f",
           tput, txn_cnt, remote_txn_cnt, local_txn_cnt, local_txn_start_cnt, total_txn_commit_cnt,
           local_txn_commit_cnt, remote_txn_commit_cnt, total_num_atomic_retry, total_txn_abort_cnt,positive_txn_abort_cnt, unique_txn_abort_cnt,
           local_txn_abort_cnt, remote_txn_abort_cnt, txn_run_time / BILLION,
           txn_run_avg_time / BILLION, multi_part_txn_cnt, multi_part_txn_run_time / BILLION,
           multi_part_txn_avg_time / BILLION, single_part_txn_cnt,
           single_part_txn_run_time / BILLION, single_part_txn_avg_time / BILLION, txn_write_cnt,
-          record_write_cnt, parts_touched, avg_parts_touched);
+          record_write_cnt, parts_touched, avg_parts_touched,remote_index_get_operation,(double)remote_index_get_operation/(double)total_txn_commit_cnt);
 
 //   fprintf(outf,
 //   ",local_lock_fail_abort =%ld"
@@ -1571,6 +1575,7 @@ void Stats_thd::combine(Stats_thd * stats) {
   is_content_abort2+=stats->is_content_abort2;
   x_content_abort+=stats->x_content_abort;
   ix_content_abort+=stats->ix_content_abort;
+  remote_index_get_operation+=stats->remote_index_get_operation;
 
   // Breakdown
   ts_alloc_time+=stats->ts_alloc_time;

@@ -73,8 +73,28 @@ Message * Message::create_message(char * buf) {
   //printf("buffer is:%s\n",buf);
   //printf("msg:%lu:%lu %lu %lu\n",((DAQueryMessage*)msg)->seq_id,((DAQueryMessage*)msg)->state,((DAQueryMessage*)msg)->next_state,((DAQueryMessage*)msg)->last_state);
   fflush(stdout);
- msg->copy_from_buf(buf);
+  msg->copy_from_buf(buf);
  return msg;
+}
+
+Message * Message::create_message(char *buf,RemReqType get_rtype,uint64_t info_size){
+    assert(get_rtype == IDX_INFO);
+    uint64_t ptr = 0;
+    // COPY_VAL(rtype,buf,ptr);
+    Message * msg = create_message(get_rtype);
+    fflush(stdout);
+    msg->rtype = get_rtype;
+    msg->copy_from_buf(buf);
+    return msg;
+}
+
+Message * Message::create_message(char *buf,RemReqType get_rtype,PGMIndex<uint64_t,64>* pgm_index){
+    assert(get_rtype == IDX_INFO);
+    Message * msg = create_message(get_rtype);
+    fflush(stdout);
+    msg->rtype = get_rtype;
+    msg->copy_idx(pgm_index);
+    return msg;
 }
 
 Message * Message::create_message(TxnManager * txn, RemReqType rtype) {
@@ -200,6 +220,9 @@ Message * Message::create_message(RemReqType rtype) {
     case CL_RSP:
       msg = new ClientResponseMessage;
       break;
+    case IDX_INFO:
+      msg = new IndexInfoMessage;
+      break;
     default:
       assert(false);
   }
@@ -301,12 +324,20 @@ void Message::mcopy_to_buf(char * buf) {
 
 void Message::release_message(Message * msg) {
   switch(msg->rtype) {
-    case INIT_DONE: {
+    case INIT_DONE: 
+    case IDX_INFO:
+    {
       InitDoneMessage * m_msg = (InitDoneMessage*)msg;
       m_msg->release();
       delete m_msg;
       break;
                     }
+    // case IDX_INFO: {
+    //   IndexInfoMessage * m_msg = (InedxInfoMessage*)msg;
+    //   m_msg->release();
+    //   delete m_msg;
+    //   break;
+    //                 }
     case RQRY:
     case CRQRY:
     case RQRY_CONT: {
@@ -1083,6 +1114,138 @@ void ClientResponseMessage::copy_to_buf(char * buf) {
   uint64_t ptr = Message::mget_size();
   COPY_BUF(buf,client_startts,ptr);
  assert(ptr == get_size());
+}
+
+/************************/
+uint64_t IndexInfoMessage::get_size() {  
+
+    size += sizeof(RemReqType); //rtype
+    size += sizeof(uint64_t);//return_node_id
+    size += sizeof(size_t);//n
+    size += sizeof(uint64_t);//first_key
+    size += sizeof(uint64_t);//segment_size
+
+    // size += sizeof(uint64_t)*segments.size();
+    // size += sizeof(Floating)*segments.size();
+    // size += sizeof(uint64_t)*segments.size();
+    size += sizeof(pgm::PGMIndex<uint64_t,64>::Segment) * segments.size();
+    
+    size += sizeof(uint64_t);//level_offset_size
+    size += sizeof(size_t) * levels_offsets.size();//level_offset_size
+
+
+    // uint64_t vector_size = segments.size();
+    return size;
+}
+
+void IndexInfoMessage::copy_from_txn(TxnManager * txn) {
+  Message::mcopy_from_txn(txn);
+}
+
+void IndexInfoMessage::copy_to_txn(TxnManager * txn) {
+  Message::mcopy_to_txn(txn);
+}
+
+// void IndexInfoMessage::copy_idx(char * buf,uint64_t info_size){
+// }
+
+void IndexInfoMessage::copy_idx(PGMIndex<uint64_t,64>* pgm_index){
+    n = pgm_index->get_n();                          
+    first_key = pgm_index->get_first_key();  
+    printf("[message.cpp:1138]segment size = %ld\n",segments.size());
+
+  vector<pgm::PGMIndex<uint64_t,64>::Segment> tmp_seg = pgm_index->get_segment();  
+    printf("[message.cpp:1140]segment size = %ld\n",tmp_seg.size());
+    printf("[message.cpp:1142]segment size = %ld\n",segments.size());
+
+  segments.assign(tmp_seg.begin(),tmp_seg.end());  
+  vector<pgm::PGMIndex<uint64_t,64>::Segment>().swap(tmp_seg);
+
+  vector<size_t> tmp_level = pgm_index->get_level_offset(); 
+  levels_offsets.assign(tmp_seg.begin(),tmp_seg.end());  
+  vector<size_t>().swap(tmp_level);
+}
+
+void IndexInfoMessage::copy_to_idx(PGMIndex<uint64_t,64>* pgm_index){
+
+  pgm_index->set_n(n);                          
+  pgm_index->set_first_key(first_key);                          
+  pgm_index->set_segment(segments);                          
+  pgm_index->set_level_offset(levels_offsets); 
+  printf("[message.cpp:1175]remote segment size = %d\n",(pgm_index->get_segment()).size());                         
+  printf("[message.cpp:1176]get segment size = %d\n",segments.size());                         
+}
+
+
+void IndexInfoMessage::copy_from_buf(char * buf) {
+  uint64_t ptr = 0;
+  return_node_id = g_node_id;
+  COPY_VAL(rtype,buf,ptr);
+  COPY_VAL(return_node_id,buf,ptr);
+  COPY_VAL(n,buf,ptr);
+  COPY_VAL(first_key,buf,ptr);
+  uint64_t segments_size;
+  segments_size = segments.size();
+  COPY_VAL(segments_size,buf,ptr);
+  for(int i = 0;i < segments_size;i++){
+        // COPY_VAL(segments[i],buf,ptr);
+        pgm::PGMIndex<uint64_t,64>::Segment tmp_seg;
+        COPY_VAL(tmp_seg.key,buf,ptr);           
+        COPY_VAL(tmp_seg,buf,ptr);           
+        COPY_VAL(tmp_seg.intercept,buf,ptr);
+        segments.emplace_back(tmp_seg);
+        // COPY_VAL(segments[i].key,buf,ptr);           
+        // COPY_VAL(segments[i].slope,buf,ptr);           
+        // COPY_VAL(segments[i].intercept,buf,ptr);
+  }
+  uint64_t levels_offsets_size = 0;
+  levels_offsets_size = levels_offsets.size();
+  COPY_VAL(levels_offsets_size,buf,ptr);
+
+  for(int i = 0;i < levels_offsets_size;i++){
+    size_t tmp_lev;
+    COPY_VAL(tmp_lev,buf,ptr);
+    levels_offsets.emplace_back(tmp_lev);
+  }
+
+  size = ptr;
+
+//   COPY_VAL(pgm_index_msg_info,buf,ptr);
+//   assert(ptr == get_size());
+}
+
+void IndexInfoMessage::copy_to_buf(char * buf) {
+    rtype = IDX_INFO;
+    return_node_id = g_node_id;
+    uint64_t ptr = 0;
+    COPY_BUF(buf,rtype,ptr);
+    COPY_BUF(buf,return_node_id,ptr);
+    COPY_BUF(buf,n,ptr);
+    COPY_BUF(buf,first_key,ptr);
+
+    uint64_t segments_size = segments.size();
+    COPY_BUF(buf,segments_size,ptr);
+
+    printf("[message.cpp:1194]segment_size = %ld\n",segments_size);
+    for(int i = 0;i < segments.size();i++){
+        printf("[message.cpp:1196]segment[%d] = %ld\n",i,segments[i].intercept);
+        // COPY_BUF(buf,segments[i],ptr);
+        COPY_BUF(buf,segments[i].key,ptr); 
+        printf("[message.cpp:1196]%s\n",(char*)(buf + ptr - sizeof(int)));          
+        COPY_BUF(buf,segments[i].slope,ptr);           
+        COPY_BUF(buf,segments[i].intercept,ptr);    
+        printf("[message.cpp:1210] segment.key = %d\n",segments[i].key);       
+    }
+
+    uint64_t levels_offsets_size = levels_offsets.size();
+    COPY_BUF(buf,levels_offsets_size,ptr);
+
+    for(int i = 0;i < levels_offsets.size();i++){
+        COPY_BUF(buf,levels_offsets[i],ptr);
+    }
+    printf("[message.cpp:1210]%s",buf);
+
+    size = ptr;
 }
 
 /************************/

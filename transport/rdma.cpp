@@ -95,6 +95,19 @@ uint64_t Rdma::get_port(uint64_t node_id){
   return port_id ;
 }
 
+int get_msg_size(){
+    int msg_size = 0;
+    uint64_t segment_vector_size = pgm_index[g_node_id]->get_segment().size();
+    uint64_t level_size = pgm_index[g_node_id]->get_level_offset().size();
+    uint64_t segment_size = sizeof(uint64_t) + sizeof(float) + sizeof(int32_t);
+
+    
+    msg_size += sizeof(uint64_t)*2;
+    msg_size += sizeof(uint64_t);
+    msg_size += sizeof(size_t);
+    msg_size +=segment_size * segment_vector_size + sizeof(size_t)*level_size;
+}
+
 void * Rdma::client_qp(void *arg){
 
 	printf("\n====client====");
@@ -197,10 +210,12 @@ void * Rdma::server_qp(void *){
 
 char* Rdma::get_index_client_memory(uint64_t thd_id, int num) { //num>=1
 	char* temp = (char *)(client_rdma_rm->raw_ptr);
-#if INDEX_STRUCT != IDX_RDMA_BTREE
-	temp += sizeof(IndexInfo) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
+#if INDEX_STRUCT == IDX_RDMA_BTREE
+    temp += sizeof(rdma_bt_node) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
+#elif INDEX_STRUCT == IDX_LEARNED
+	temp += sizeof(LeafIndexInfo) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
 #else
-	temp += sizeof(rdma_bt_node) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
+    temp += sizeof(IndexInfo) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
 #endif
 	return temp;
 }
@@ -208,12 +223,23 @@ char* Rdma::get_index_client_memory(uint64_t thd_id, int num) { //num>=1
 char* Rdma::get_row_client_memory(uint64_t thd_id, int num) { //num>=1
 	//when num>1, get extra row for doorbell batched RDMA requests
 	char* temp = (char *)(client_rdma_rm->raw_ptr);
-#if INDEX_STRUCT != IDX_RDMA_BTREE
-	temp +=  sizeof(IndexInfo) * (max_batch_index * g_total_thread_cnt * (COROUTINE_CNT + 1));
+#if INDEX_STRUCT == IDX_RDMA_BTREE
+    temp +=  sizeof(rdma_bt_node) * ((max_batch_index+1) * g_total_thread_cnt * (COROUTINE_CNT + 1));
+#elif INDEX_STRUCT == IDX_LEARNED
+	temp +=  sizeof(LeafIndexInfo) * ((max_batch_index+1) * g_total_thread_cnt * (COROUTINE_CNT + 1));
 #else
-	temp +=  sizeof(rdma_bt_node) * ((max_batch_index+1) * g_total_thread_cnt * (COROUTINE_CNT + 1));
+    temp +=  sizeof(IndexInfo) * (max_batch_index * g_total_thread_cnt * (COROUTINE_CNT + 1));
 #endif
 	temp += row_t::get_row_size(ROW_DEFAULT_SIZE) * ((num-1) * g_total_thread_cnt * (COROUTINE_CNT + 1) + thd_id);
+	return temp;
+}
+
+char* Rdma::get_param_client_memory(int num) { //num>=1
+	//when num>1, get extra row for doorbell batched RDMA requests
+	char* temp = (char *)(client_rdma_rm->raw_ptr);
+
+	// temp +=  sizeof(LeafIndexInfo) * ((max_batch_index+1) * g_total_thread_cnt * (COROUTINE_CNT + 1));
+	// temp += row_t::get_row_size(ROW_DEFAULT_SIZE) * (g_total_thread_cnt * (COROUTINE_CNT + 1) + g_total_thread_cnt);
 	return temp;
 }
 
@@ -271,6 +297,155 @@ ALLOC_FAILED:
 }
 
 #endif
+
+void Rdma::get_pgm_para(){
+    int get_num = g_node_cnt - 1;
+    printf("[rdma.cpp:288]get pgm para\n");
+    // while(get_num > 0){
+        for(int i = 0;i < g_node_cnt;i++){
+            if(i == g_node_id)continue;
+
+            int msg_size = 0;
+            msg_size = get_msg_size();
+            char *buf = (char *)malloc(msg_size);
+            memcpy(buf,(char*)(rdma_global_buffer + i * 1024*1024L),msg_size);
+            printf("[310]%d\n",*(size_t *)buf);
+
+            uint64_t ptr = 0;
+
+            size_t n;
+            COPY_VAL(n,buf,ptr);
+            pgm_index[i]->set_n(n);
+           //todo - ok
+            uint64_t first_key;
+            COPY_VAL(first_key,buf,ptr);
+            pgm_index[i]->set_first_key(first_key);
+
+            uint64_t segments_size;
+            COPY_VAL(segments_size,buf,ptr);
+
+            // vector<pgm::PGMIndex<uint64_t,64>::Segment> segments;      
+            // vector<size_t> levels_offsets; 
+            printf("[rdma.cpp:327]segment_size = %ld\n",segments_size);
+
+            vector<pgm::PGMIndex<uint64_t,64>::Segment> segments;      
+            for(int j = 0;j < segments_size;j++){
+                    pgm::PGMIndex<uint64_t,64>::Segment tmp_seg;
+                    // printf("[rdma.cpp:330]segment_size = %ld\n",segments_size);
+                    COPY_VAL(tmp_seg.key,buf,ptr);           
+                    COPY_VAL(tmp_seg.slope,buf,ptr);           
+                    COPY_VAL(tmp_seg.intercept,buf,ptr);
+                    // pgm_index[i]->get_segment().emplace_back(tmp_seg);
+                    segments.emplace_back(tmp_seg);
+            }
+            pgm_index[i]->set_segment(segments);                          
+
+            uint64_t levels_offsets_size = 0;
+            COPY_VAL(levels_offsets_size,buf,ptr);
+
+            vector<size_t> levels_offsets; 
+            for(int j = 0;j < levels_offsets_size;j++){
+                size_t tmp_lev;
+                // printf("[rdma.cpp:341]j = %d,ptr = %ld\n",j,ptr);
+                COPY_VAL(tmp_lev,buf,ptr);
+                levels_offsets.emplace_back(tmp_lev);
+                printf("[rdma.cpp:350]tmp_level = %ld\n",tmp_lev);
+                // pgm_index[i]->get_level_offset().emplace_back(tmp_lev);
+                // pgm_index[i]->get_level_offset()[j] = tmp_lev;
+            }
+            pgm_index[i]->set_level_offset(levels_offsets);
+
+            printf("[rdma.cpp:321]%d size = %ld\n",i,segments_size);
+            get_num --;
+        }
+    // }
+}
+
+
+
+void Rdma::send_pgm_para(){
+    int msg_size = 0;
+    msg_size = get_msg_size();
+    uint64_t segment_vector_size = pgm_index[g_node_id]->get_segment().size();
+    uint64_t level_size = pgm_index[g_node_id]->get_level_offset().size();
+    uint64_t segment_size = sizeof(uint64_t) + sizeof(float) + sizeof(int32_t);
+
+    char *buf;
+    buf = (char *)malloc(msg_size);
+    printf("\nmsg_size = %d\n",msg_size);
+    uint64_t ptr = 0;
+
+    size_t n = pgm_index[g_node_id]->get_n();
+    COPY_BUF(buf,n,ptr); 
+    uint64_t first_key = pgm_index[g_node_id]->get_first_key();
+    COPY_BUF(buf,first_key,ptr); 
+
+    COPY_BUF(buf,segment_vector_size,ptr); 
+   
+    for(int i = 0;i < segment_vector_size;i++){
+        COPY_BUF(buf,(pgm_index[g_node_id]->get_segment())[i].key,ptr);         
+        COPY_BUF(buf,(pgm_index[g_node_id]->get_segment())[i].slope,ptr);           
+        COPY_BUF(buf,(pgm_index[g_node_id]->get_segment())[i].intercept,ptr);    
+    }
+
+    COPY_BUF(buf,level_size,ptr); 
+
+    uint64_t s = sizeof(size_t);
+    printf("[rdma.cpp:381]sizeof(size_t) = %ld\n",s);
+    for(int i = 0;i < level_size;i++){
+        printf("[rdma.cpp:381]ptr = %ld,level_offset = %d\n",ptr,(pgm_index[g_node_id]->get_level_offset())[i]);
+        COPY_BUF(buf,(pgm_index[g_node_id]->get_level_offset())[i],ptr);
+    }
+
+    char *local_buf = Rdma::get_param_client_memory(1);
+    memcpy(local_buf, buf , msg_size);
+
+    printf("[382]%d\n",*(size_t *)buf);
+
+    printf("****381***%s\n",buf);
+    for(int i = 0;i < g_node_cnt;i ++){
+        if(i == g_node_id)continue;
+        uint64_t remote_offset = g_node_id*1024*1024L;
+
+        uint64_t starttime;
+	    uint64_t endtime;
+	    starttime = get_sys_clock();
+        auto res_s = rc_qp[i][0]->send_normal(
+		{.op = IBV_WR_RDMA_WRITE,
+		.flags = IBV_SEND_SIGNALED,
+		.len = msg_size,
+		.wr_id = 0},
+		{.local_addr = reinterpret_cast<rdmaio::RMem::raw_ptr_t>(local_buf),
+		.remote_addr = remote_offset,
+		.imm_data = 0});
+	RDMA_ASSERT(res_s == rdmaio::IOCode::Ok);
+#if USE_COROUTINE
+	// h_thd->un_res_p.push(std::make_pair(target_server, thd_id));
+
+	uint64_t waitcomp_time;
+	std::pair<int,ibv_wc> res_p;
+	do {
+		res_p = rc_qp[i][0]->poll_send_comp();
+		waitcomp_time = get_sys_clock();
+	} while (res_p.first == 0);
+#else
+	auto res_p = rc_qp[target_server][thd_id]->wait_one_comp();
+	RDMA_ASSERT(res_p == rdmaio::IOCode::Ok);
+    endtime = get_sys_clock();
+	INC_STATS(get_thd_id(), rdma_read_time, endtime-starttime);
+	INC_STATS(get_thd_id(), rdma_read_cnt, 1);
+	INC_STATS(get_thd_id(), worker_idle_time, endtime-starttime);
+	INC_STATS(get_thd_id(), worker_waitcomp_time, endtime-starttime);
+	DEL_STATS(get_thd_id(), worker_process_time, endtime-starttime);
+#endif
+
+    }
+
+	sleep(3);
+
+	
+
+}
 void Rdma::init(){
 	_sock_cnt = get_socket_count();
 	printf("rdma Init %d: %ld\n",g_node_id,_sock_cnt);

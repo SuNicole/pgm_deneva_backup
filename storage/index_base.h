@@ -21,6 +21,26 @@
 
 class table_t;
 
+
+class LeafIndexInfo {
+public:
+	void init(){
+        for(int i = 0;i < RANGE_SIZE;i++){
+            keys[i] = 0;
+            offsets[i] = 0;
+            intent_lock = 0;
+        }
+		key_cnt = 0;
+		// type = DT_row;
+	};
+    uint64_t intent_lock;//IS|IX|S|X
+	uint64_t keys[RANGE_SIZE];
+	uint64_t offsets[RANGE_SIZE];
+    uint64_t key_cnt;
+	// uint64_t length;
+	// Data_type type;
+};
+
 class rdma_bt_node {
 public:
   volatile uint64_t intent_lock; //IS|IX|S|X
@@ -59,6 +79,7 @@ public:
   virtual RC index_read(idx_key_t key, itemid_t *&item, int part_id = -1) = 0;
 
   virtual RC index_node_read(idx_key_t key, rdma_bt_node *&leaf_node, int part_id = -1, int thd_id = 0) = 0;
+  virtual RC learn_index_node_read(idx_key_t key, LeafIndexInfo *&leaf_node, int part_id = -1, int thd_id = 0) = 0;
 //! !!!!!!
   virtual RC index_read(idx_key_t key, itemid_t *&item, int part_id = -1, int thd_id = 0) = 0;
 

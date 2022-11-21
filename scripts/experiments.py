@@ -79,7 +79,7 @@ def ycsb_thread():
     # algos = ['RDMA_NO_WAIT']
     # algos=['RDMA_CICADA','RDMA_MAAT','RDMA_MVCC','RDMA_NO_WAIT2','RDMA_SILO','RDMA_TS1','RDMA_WAIT_DIE2','RDMA_WOUND_WAIT2']
     algos=['RDMA_OPT_NO_WAIT3']
-    base_table_size=1048576
+    base_table_size=1048576*8
     # base_table_size=35536
     #base_table_size=2097152*8
     txn_write_perc = [1]

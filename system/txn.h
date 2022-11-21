@@ -264,7 +264,9 @@ public:
 	RC get_remote_row(yield_func_t &yield, access_t type, uint64_t loc, itemid_t *m_item, row_t *& row_local, uint64_t cor_id);
     row_t * read_remote_row(uint64_t target_server,uint64_t remote_offset);
     itemid_t * read_remote_btree_index(yield_func_t &yield, uint64_t target_server,uint64_t key, uint64_t cor_id);
+    itemid_t * read_remote_learn_index(yield_func_t &yield, uint64_t target_server,uint64_t key, uint64_t cor_id);
     rdma_bt_node * read_remote_bt_node(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t cor_id);
+    LeafIndexInfo * read_remote_learn_node(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset,uint64_t cor_id);
     RC get_continuous_row(yield_func_t &yield,uint64_t cor_id,itemid_t * m_item,uint64_t first_key,uint64_t last_key);
     itemid_t * read_remote_index(uint64_t target_server,uint64_t remote_offset,uint64_t key);
 // #if CC_ALG == RDMA_MAAT
@@ -305,6 +307,7 @@ public:
     bool x_lock_content(uint64_t lock);
     bool ix_lock_content(uint64_t lock);
     rdma_bt_node * read_left_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,uint64_t left_range,uint64_t &left_range_node_offset);
+    LeafIndexInfo * read_left_leaf_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,uint64_t left_range,uint64_t &left_range_node_offset);
     void read_continuous_index(yield_func_t &yield,int target_server,int batch_num, uint64_t *batch_key_vector, itemid_t **batch_index_vector, uint64_t cor_id);
     void read_continuous_row(yield_func_t &yield,int target_server, int batch_num, uint64_t *batch_key_vector, itemid_t **batch_index_vector,row_t * row_local, uint64_t cor_id);
     RC preserve_continuous_access(itemid_t *m_item,uint64_t first_key,uint64_t last_key);
@@ -379,6 +382,7 @@ public:
     int             write_set[100];
     int*            read_set;
 	int				num_atomic_retry; //num of txn atomic_retry
+    int             remote_operate_num;
 #endif
 
 #if CC_ALG == RDMA_TS1
@@ -525,6 +529,7 @@ protected:
 	itemid_t *      index_read(INDEX * index, idx_key_t key, int part_id);
 	itemid_t *      index_read(INDEX * index, idx_key_t key, int part_id, int count);
     rdma_bt_node *      index_node_read(INDEX *index, idx_key_t key, int part_id);
+    LeafIndexInfo*       learn_index_node_read(INDEX *index, idx_key_t key, int part_id);
 	RC get_lock(row_t * row, access_t type);
 	//RC get_row(row_t * row, access_t type, row_t *& row_rtn);
     RC get_row(yield_func_t &yield,row_t * row, access_t type, row_t *& row_rtn,uint64_t cor_id, uint64_t req_key = 0 ,itemid_t *m_item = NULL);

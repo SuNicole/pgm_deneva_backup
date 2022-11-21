@@ -45,6 +45,7 @@ public:
     RC process_rack_prep(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rqry_rsp(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_crqry_rsp(yield_func_t &yield, Message * msg, uint64_t cor_id);
+    RC process_idx_info(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rqry(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_crqry(yield_func_t &yield, Message * msg, uint64_t cor_id);
     RC process_rqry_cont(yield_func_t &yield, Message * msg, uint64_t cor_id);

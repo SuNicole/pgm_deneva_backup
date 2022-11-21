@@ -350,6 +350,30 @@ int main(int argc, char *argv[]) {
 	commit_file.open("commit_histroy.txt",ios::app);
 	abort_file.open("abort_histroy.txt",ios::app);
 #endif
+#if INDEX_STRUCT == IDX_LEARNED
+    rdma_man.send_pgm_para();
+    rdma_man.get_pgm_para();
+    //同步index信息
+    // uint64_t size = sizeof(PGMIndex<uint64_t,64>);
+    // char *tmp_buf = (char *)malloc(size);
+    
+    // if(tmp_buf == NULL){printf("tmp_buf is NULL\n");}
+    // uint64_t info_size = 0;
+
+    // RemReqType rtype = IDX_INFO;
+    // Message *msg =  Message::create_message(tmp_buf,rtype,pgm_index[g_node_id]);
+
+// #if USE_RDMA == CHANGE_MSG_QUEUE
+//   tport_man.rdma_thd_send_msg(get_thd_id(), dest_node_id, msg);
+// #else
+//     for(int i = 0;i < g_node_cnt;i ++){
+//         if(i == g_node_id)continue;
+//         //! TODO : reset thread_id
+//         msg_queue.enqueue(0,msg,i);
+//     }
+// #endif
+
+#endif
     printf("max_tuple_size:%ld tuple_count:%ld memory_size:%ld\n", max_tuple_size,tuple_count,memory_count);
 
 	// 2. spawn multiple threads

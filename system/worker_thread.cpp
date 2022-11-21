@@ -47,6 +47,7 @@
 #include "index_btree.h"
 #include "index_rdma.h"
 #include "index_rdma_btree.h"
+#include "index_learned.h"
 #include "ycsb.h"
 #include "tpcc.h"
 #include "da.h"
@@ -218,6 +219,8 @@ void WorkerThread::process(yield_func_t &yield, Message * msg, uint64_t cor_id) 
 			case RQRY_CONT:
         rc = process_rqry_cont(yield, msg, cor_id);
 				break;
+            case IDX_INFO:
+        rc = process_idx_info(yield, msg, cor_id);
 			case RQRY_RSP:
         rc = process_rqry_rsp(yield, msg, cor_id);
                 break;
@@ -1094,6 +1097,21 @@ RC WorkerThread::process_crqry_rsp(yield_func_t &yield, Message * msg, uint64_t 
   }
   
   return RCOK;
+}
+
+//TODO: 是个雷
+RC WorkerThread::process_idx_info(yield_func_t &yield, Message * msg, uint64_t cor_id){
+    g_init_done[msg->return_node_id] = true;
+    printf("Received IDX_INFO from node %ld\n",msg->return_node_id);
+    // fflush(stdout);
+
+    uint64_t node_id = ((IndexInfoMessage*)msg)->get_return_id();
+    uint64_t ptr = sizeof(RemReqType)+sizeof(uint64_t);
+    //todo-check content 
+    msg->copy_to_idx(pgm_index[node_id]);
+
+    simulation->process_setup_msg();
+    return RCOK;
 }
 
 RC WorkerThread::process_rqry(yield_func_t &yield, Message * msg, uint64_t cor_id) {

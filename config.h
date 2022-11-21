@@ -62,8 +62,11 @@
 
 /******MIX WORKLOAD********/
 #define MIX_WORKLOAD 1
-#define CONTINUOUS_TXN_PERC 0.1
+#define CONTINUOUS_TXN_PERC 0.9
 #define MAX_LOCK_LAYER 1 //root-0;child of root-1
+
+/***learn index***/
+#define LEARN_INDEX 0
 
 /************RDMA TYPE**************/
 #define CHANGE_TCP_ONLY 0
@@ -287,15 +290,20 @@
 #define ENABLE_LATCH        false
 #define CENTRAL_INDEX       false
 #define CENTRAL_MANAGER       false
-//#ifdef USE_RDMA
-#if RDMA_ONE_SIDE == true
-// #define INDEX_STRUCT        IDX_RDMA
-#define INDEX_STRUCT        IDX_RDMA_BTREE
+#if LEARN_INDEX == 1
+    #define INDEX_STRUCT        IDX_LEARNED
 #else
-// #define INDEX_STRUCT        IDX_HASH
-#define INDEX_STRUCT        IDX_BTREE
+    //#ifdef USE_RDMA
+    #if RDMA_ONE_SIDE == true
+    // #define INDEX_STRUCT        IDX_RDMA
+    #define INDEX_STRUCT        IDX_RDMA_BTREE
+    #else
+    // #define INDEX_STRUCT        IDX_HASH
+    #define INDEX_STRUCT        IDX_BTREE
+    #endif
 #endif
 #define BTREE_ORDER         16
+#define RANGE_SIZE          16
 
 // [TIMESTAMP]
 #define TS_TWR            false
@@ -372,7 +380,7 @@
 #define DATA_PERC 100
 #define ACCESS_PERC 0.03
 #define INIT_PARALLELISM 1
-#define SYNTH_TABLE_SIZE 4194304
+#define SYNTH_TABLE_SIZE 33554432
 #define ZIPF_THETA 0.4
 #define TXN_WRITE_PERC 1
 #define TUP_WRITE_PERC 1
@@ -520,6 +528,7 @@ enum PPSTxnType {
 #define IDX_BTREE         2
 #define IDX_RDMA          3
 #define IDX_RDMA_BTREE    4
+#define IDX_LEARNED        5
 // WORKLOAD
 #define YCSB            1
 #define TPCC            2
