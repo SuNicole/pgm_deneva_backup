@@ -91,7 +91,8 @@ for exp in exps:
                 if not found_cfg:
                     f_cfg.write(line)
 
-        cmd = "make clean; make deps; make -j16"
+        cmd = "make -j16"
+        # cmd = "make clean; make deps; make -j16"
         print cmd
         os.system(cmd)
         if not execute:

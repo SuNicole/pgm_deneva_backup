@@ -111,8 +111,14 @@ RC table_t::get_new_row(row_t *& row, uint64_t part_id, uint64_t &row_id) {
     // printf("[table.cpp:115]tuple_size = %ld \n",row_t::get_row_size(get_schema()->get_tuple_size()));
     pthread_mutex_lock( RDMA_MEMORY_LATCH );
     uint64_t size = row_t::get_row_size(get_schema()->get_tuple_size());
+#if !DYNAMIC_WORKLOAD
     row_t *ptr = (row_t*)r2::AllocatorMaster<>::get_thread_allocator()->alloc(size);
 	assert (ptr != NULL);
+#else
+    uint64_t row_slot_id = ATOM_ADD_FETCH(*last_row_order,1);
+    row_t *ptr = (row_t*)(rdma_global_buffer + rdma_index_size + row_slot_id*size);
+	assert (ptr != NULL);
+#endif
 
     tuple_count++;
     memory_count += size;

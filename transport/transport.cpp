@@ -250,7 +250,7 @@ Socket * Transport::connect(uint64_t dest_id,uint64_t port_id) {
   return socket;
 }
 
-#ifdef USE_RDMA
+#if USE_RDMA  == CHANGE_MSG_QUEUE || USE_RDMA == CHANGE_TCP_ONLY
 void Transport::create_server(uint64_t port, uint64_t dest_node_id) {
 	RCtrl ctrl(port);
 	RecvManager<RDMA_ENTRY_NUM, RDMA_BUFFER_ITEM_SIZE> manager(ctrl);
@@ -580,7 +580,7 @@ void Transport::init() {
 }
 
 #endif
-#ifdef USE_RDMA
+#if USE_RDMA  == CHANGE_MSG_QUEUE || USE_RDMA == CHANGE_TCP_ONLY
 #if 0
 char* Transport::get_next_buf(rdma_send_qps* send_qpi) {
   char *buf = (char *)(send_qpi->send_qps->local_mr->buf);
@@ -731,17 +731,12 @@ void Transport::send_msg(uint64_t send_thread_id, uint64_t dest_node_id, void * 
 	INC_STATS(send_thread_id,msg_send_cnt,1);
 }
 #endif
-#ifdef USE_RDMA
+#if RDMA_TWO_SIDE
 std::vector<Message*> * Transport::rdma_recv_msg(uint64_t thd_id) {
   	int bytes = 0;
 	char * buf;
 	uint64_t starttime = get_sys_clock();
-// 	uint64_t starttime = get_sys_clock();
-//   std::vector<Message*> * msgs = NULL;
-//   //uint64_t ctr = starttime % recv_sockets.size();
     uint64_t rand = (starttime % (g_total_node_cnt)) / g_this_rem_thread_cnt;
-//   // uint64_t ctr = ((thd_id % g_this_rem_thread_cnt) % recv_sockets.size()) + rand *
-//   // g_this_rem_thread_cnt;
     uint64_t ctr = thd_id % g_this_rem_thread_cnt;
 	assert(ctr < g_total_node_cnt);
 	if(g_this_rem_thread_cnt < g_total_node_cnt) {
@@ -753,12 +748,6 @@ std::vector<Message*> * Transport::rdma_recv_msg(uint64_t thd_id) {
 	if(ctr == g_node_id) ctr = (ctr + 1) % g_total_node_cnt;
 	assert(ctr < g_total_node_cnt);
 	uint64_t start_ctr = ctr;
-	// uint64_t ctr;
-	// ctr = starttime % (g_node_cnt + g_client_node_cnt);
-	// while(ctr == g_node_id) {
-	// 	starttime = get_sys_clock();
-	// 	ctr = starttime % (g_node_cnt + g_client_node_cnt);
-	// }
 	std::vector<Message*> * msgs =new std::vector<Message*>;
 	uint64_t port_id;
 #if USE_RDMA == CHANGE_TCP_ONLY
@@ -779,22 +768,8 @@ std::vector<Message*> * Transport::rdma_recv_msg(uint64_t thd_id) {
 	
 	port_id = get_thd_port_id(ctr, g_node_id, send_thd_id);
 #endif
-	//uint64_t start_ctr = ctr;
-	//printf("%rdma will recv msg from node %ld\n", ctr);
 	while (bytes <= 0 && (!simulation->is_setup_done() ||
 							(simulation->is_setup_done() && !simulation->is_done()))) {
-
-		//sleep(1);
-		// starttime = get_sys_clock();
-		// ctr = starttime % (g_node_cnt + g_client_node_cnt);
-		// while(ctr == g_node_id) {
-		// 	starttime = get_sys_clock();
-		// 	ctr = starttime % (g_node_cnt + g_client_node_cnt);
-		// }
-		//printf("%rdma will recv msg from node %ld\n", ctr);
-
-
-        //cout << "recv message from :" << ctr << " send_thd " << send_thd_id << endl;
 		pthread_mutex_lock( tport_man.latch );
 		auto recv_qpi = tport_man.recv_qps[port_id-TPORT_TWOSIDE_PORT];
 		auto recv_rsi = tport_man.recv_rss[port_id-TPORT_TWOSIDE_PORT];
@@ -840,8 +815,6 @@ std::vector<Message*> * Transport::rdma_recv_msg(uint64_t thd_id) {
 		port_id = get_thd_port_id(ctr, g_node_id, send_thd_id);
 #endif
 	}
-  // if (msgs->size() > 0) RDMA_LOG(4) << " RDMA recv node id "<< msgs->front()->return_node_id;
-	
 	if(bytes <= 0 ) {
 		INC_STATS(thd_id,msg_recv_idle_time, get_sys_clock() - starttime);
 		return msgs;

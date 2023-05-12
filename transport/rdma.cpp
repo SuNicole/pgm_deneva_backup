@@ -443,7 +443,7 @@ void Rdma::send_pgm_para(){
 
 	sleep(3);
 
-	
+ 
 
 }
 void Rdma::init(){
@@ -502,6 +502,10 @@ void Rdma::init(){
 	}
 
   	char* rheader = rdma_global_buffer + rdma_index_size;
+    last_index_node_order = (uint64_t*)(rdma_global_buffer+rdma_index_size-sizeof(uint64_t));
+    last_row_order = (uint64_t*)(rdma_global_buffer+rdma_buffer_size-sizeof(uint64_t));
+    *last_index_node_order=0;
+    *last_row_order=0;
 	r2::AllocatorMaster<>::init(rheader,rdma_buffer_size-rdma_index_size);
 
 }

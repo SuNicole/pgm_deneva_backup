@@ -154,6 +154,8 @@ void Stats_thd::clear() {
   x_content_abort = 0;
   ix_content_abort = 0;
 
+  insert_abort1 = 0;
+
   remote_index_get_operation = 0;
 
   // Breakdown
@@ -292,6 +294,7 @@ void Stats_thd::clear() {
     work_queue_etx_cnt[i]=0;
     work_queue_dtx_cnt[i]=0;
   }
+  
   // IO
   msg_queue_delay_time=0;
   msg_queue_cnt=0;
@@ -714,6 +717,10 @@ void Stats_thd::print(FILE * outf, bool prog) {
   ",ix_content_abort = %ld ",
     s_content_abort,is_content_abort,is_content_abort2,x_content_abort,ix_content_abort);
 
+  fprintf(outf, //ywq
+  ",insert_abort1 = %ld ",
+    insert_abort1);
+
   // Breakdown
   fprintf(outf,
   ",ts_alloc_time=%f"
@@ -976,7 +983,7 @@ void Stats_thd::print(FILE * outf, bool prog) {
             ",proc_time_type%ld=%f",
             i, worker_process_cnt_by_type[i], i, worker_process_time_by_type[i] / BILLION);
   }
-
+/*
   for(uint64_t i = 0; i < SECOND; i ++) {
     fprintf(outf,
       ",work_queue_wq_cnt%lu=%lu"
@@ -1009,7 +1016,7 @@ void Stats_thd::print(FILE * outf, bool prog) {
       ,work_queue_dtx_cnt[i]
     );
   }
-
+*/
   // IO
   double mbuf_send_intv_time_avg = 0;
   double msg_unpack_time_avg = 0;
@@ -1577,6 +1584,7 @@ void Stats_thd::combine(Stats_thd * stats) {
   ix_content_abort+=stats->ix_content_abort;
   remote_index_get_operation+=stats->remote_index_get_operation;
 
+  insert_abort1+=stats->insert_abort1;
   // Breakdown
   ts_alloc_time+=stats->ts_alloc_time;
   abort_time+=stats->abort_time;

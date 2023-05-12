@@ -666,9 +666,9 @@ inline RC TPCCTxnManager::run_payment_0(yield_func_t &yield,uint64_t w_id, uint6
 	row_t * r_wh = ((row_t *)item->location);
 	INC_STATS(get_thd_id(),trans_benchmark_compute_time,get_sys_clock() - starttime);
 	if (g_wh_update)
-		rc = get_row(yield,r_wh, WR, r_wh_local,cor_id);
+		rc = get_row(yield,r_wh, WR, r_wh_local,cor_id,0,NULL);
 	else
-		rc = get_row(yield,r_wh, RD, r_wh_local,cor_id);
+		rc = get_row(yield,r_wh, RD, r_wh_local,cor_id,0,NULL);
 
 	return rc;
 }

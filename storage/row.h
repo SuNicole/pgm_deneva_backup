@@ -78,6 +78,7 @@ class Row_rdma_cicada;
 class Row_cicada;
 class Row_rdma_dslr_no_wait;
 class Row_rdma_bamboo;
+class Row_rdma_range_lock;
 
 //struct RdmaMVHis;
 
@@ -124,7 +125,9 @@ public:
 	void copy(row_t * src);
 
 	void 		set_primary_key(uint64_t key) { _primary_key = key; };
+	void 		set_decimal_key(uint64_t key) { decimal_key = key; };
 	uint64_t 	get_primary_key() {return _primary_key; };
+    uint64_t    get_decimal_key(){return decimal_key;}
 	uint64_t 	get_part_id() { return _part_id; };
 
 	void set_value(int id, void * ptr);
@@ -313,6 +316,10 @@ public:
         uint64_t start_ts[HIS_CHAIN_NUM];
         uint64_t end_ts[HIS_CHAIN_NUM];
 		Row_rdma_mvcc *manager;
+    #elif CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+        volatile uint64_t _tid_word;
+        volatile uint64_t conflict_num;
+		Row_rdma_range_lock * manager;
 	#elif CC_ALG == OCC || CC_ALG == BOCC || CC_ALG == FOCC
 		Row_occ * manager;
 
@@ -349,6 +356,7 @@ public:
 private:
 	// primary key should be calculated from the data stored in the row.
 	uint64_t 		_primary_key;
+    double          decimal_key;
 	uint64_t		_part_id;
 	bool part_info;
 	uint64_t _row_id;

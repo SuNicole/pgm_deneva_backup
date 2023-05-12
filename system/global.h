@@ -123,6 +123,9 @@ class RDMA_ts;
 #if CC_ALG == RDMA_CICADA
 class RDMA_Cicada;
 #endif
+#if CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+class RDMA_range_lock;
+#endif
 #if CC_ALG == RDMA_CALVIN
 class RDMA_calvin;
 #endif
@@ -230,6 +233,9 @@ extern RDMA_calvin calvin_man;
 #endif
 #if CC_ALG == RDMA_CNULL
 extern RDMA_Null rcnull_man;
+#endif
+#if CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+extern RDMA_range_lock rangelock_man;
 #endif
 extern Workload * m_wl;
 extern TxnManPool txn_man_pool;
@@ -467,11 +473,6 @@ extern uint32_t g_max_num_waits;
 extern UInt32 g_repl_type;
 extern UInt32 g_repl_cnt;
 
-enum YCSBQueryType {
-    YCSB_DISCRETE,
-    YCSB_CONTINUOUS
-};
-
 enum RC { RCOK=0, Commit, Abort, WAIT, WAIT_REM, ERROR, FINISH, NONE};
 enum RemReqType {
   INIT_DONE = 0,
@@ -508,6 +509,13 @@ enum RemReqType {
   NO_MSG
 };
 
+enum YCSBQueryType {
+    YCSB_DISCRETE = 0,
+    YCSB_CONTINUOUS,
+    YCSB_INSERT,
+    YCSB_DELETE
+};
+
 // Calvin
 enum CALVIN_PHASE {
   CALVIN_RW_ANALYSIS = 0,
@@ -542,6 +550,7 @@ enum latch_t {LATCH_EX, LATCH_SH, LATCH_NONE};
 // accessing type determines the latch type on nodes
 enum idx_acc_t {INDEX_INSERT, INDEX_READ, INDEX_NONE};
 typedef uint64_t idx_key_t; // key id for index
+typedef double rdma_idx_key_t; // key id for indexrdma_idx_key_t
 typedef uint64_t (*func_ptr)(idx_key_t);	// part_id func_ptr(index_key);
 
 /* general concurrency control */
@@ -635,4 +644,10 @@ extern uint64_t btree_layer;
 extern pgm::PGMIndex<uint64_t,64> **pgm_index;
 extern pgm::PGMIndex<uint64_t,64> *local_pgm_index;
 extern int range_size;
+extern uint64_t *last_row_order;
+extern uint64_t *last_index_node_order;
+extern int max_local_key;
+// extern uint64_t local_row_num;
+extern uint64_t general_tuple_size;
+extern row_t *total_row;
 #endif

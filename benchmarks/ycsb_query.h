@@ -41,10 +41,12 @@ public:
     this->acctype = req->acctype;
     this->key = req->key;
     this->value = req->value;
+    this->decimal_key = req->decimal_key;
   }
 //	char table_name[80];
 	access_t acctype;
 	uint64_t key;
+    double decimal_key;
 	char value;
 	// only for (qtype == SCAN)
 	//UInt32 scan_len;

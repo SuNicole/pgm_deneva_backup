@@ -312,8 +312,10 @@ BaseQuery * YCSBQueryGenerator::gen_requests_zipf(uint64_t home_partition_id, Wo
     // srand(time(0));
     // double rand_num =  rand()%100/(double)101;
     double rand_num=((double)rand())/RAND_MAX;
+    double continuous_perc = CONTINUOUS_TXN_PERC;
+    double insert_perc = INSERT_TXN_PERC;
     // printf("[ycsb_query.cpp:315]rand num = %lf\n",rand_num);
-    if(rand_num < CONTINUOUS_TXN_PERC){//mix
+    if(rand_num < continuous_perc){//mix
         // printf("[ycsb_query.cpp:311]generate continuous txn\n");
         query->query_type = YCSB_CONTINUOUS;
 
@@ -362,6 +364,7 @@ BaseQuery * YCSBQueryGenerator::gen_requests_zipf(uint64_t home_partition_id, Wo
             req->acctype = RD;
             req->key = primary_key;
             req->value = mrand->next() % (1<<8);
+            req->decimal_key = (double)primary_key;
             // Make sure a single row is not accessed twice
             // if (all_keys.find(req->key) == all_keys.end()) {
             //     all_keys.insert(req->key);
@@ -378,7 +381,60 @@ BaseQuery * YCSBQueryGenerator::gen_requests_zipf(uint64_t home_partition_id, Wo
         // if(partitions_accessed.size() > 1){
         //     printf("[ycsb_query.cpp:367]%ld %ld\n",partitions_accessed.begin(),partitions_accessed.end());
         // }
-    }else{//normal
+    }
+#if DYNAMIC_WORKLOAD
+    else if((rand_num >= continuous_perc) && (rand_num <= continuous_perc + insert_perc)){
+        // printf("[ycsb_query.cpp:387]\n");
+        query->query_type = YCSB_INSERT;
+
+        int rid = 0;
+
+        uint64_t first_key = 0;
+        uint64_t primary_key = 0;
+        double decimal_part = 0;
+        for (UInt32 i = 0; i < g_req_per_query; i ++) {
+            uint64_t partition_id;
+            if(i == 0){
+                partition_id = mrand->next() % g_part_cnt;
+                if(g_strict_ppt && g_part_per_txn <= g_part_cnt) {
+                    while ((partitions_accessed.size() < g_part_per_txn &&
+                                    partitions_accessed.count(partition_id) > 0) ||
+                                (partitions_accessed.size() == g_part_per_txn &&
+                                    partitions_accessed.count(partition_id) == 0)) {
+                        partition_id = mrand->next() % g_part_cnt;
+                    }
+                }
+                
+                uint64_t row_id = zipf(table_size - 1, g_zipf_theta);
+                assert(row_id < table_size);
+                primary_key = row_id * g_part_cnt + partition_id;
+                assert(primary_key < g_synth_table_size);
+                first_key = primary_key;
+                decimal_part = (double)(mrand->next() % 10000) / 10000;
+
+            }else{
+                primary_key = first_key + i;
+                if(primary_key >= g_synth_table_size)primary_key = g_synth_table_size -1 ;
+
+                uint64_t row_id = zipf(table_size - 1, g_zipf_theta);
+                assert(row_id < table_size);
+                // partition_id = primary_key - row_id * g_part_cnt;
+                partition_id = (primary_key % g_part_cnt)%g_node_cnt;
+            }
+
+            ycsb_request * req = (ycsb_request*) mem_allocator.alloc(sizeof(ycsb_request));
+
+            req->acctype = RD;
+            req->key = primary_key;
+            req->value = mrand->next() % (1<<8);
+            req->decimal_key = (double)primary_key + decimal_part;
+            partitions_accessed.insert(partition_id);
+            rid ++;
+            query->requests.add(req);
+        }
+    }
+#endif
+    else{//normal
         // printf("[ycsb_query.cpp:378]generate normal txn\n");
         query->query_type = YCSB_DISCRETE;
 
@@ -438,6 +494,7 @@ BaseQuery * YCSBQueryGenerator::gen_requests_zipf(uint64_t home_partition_id, Wo
 
             req->key = primary_key;
             req->value = mrand->next() % (1<<8);
+            req->decimal_key = (double)primary_key;
             // Make sure a single row is not accessed twice
             if (all_keys.find(req->key) == all_keys.end()) {
                 all_keys.insert(req->key);

@@ -51,6 +51,13 @@ public:
     void * bt_node_location;
 };
 
+class range_node_preserve{
+public:
+    uint64_t server_id;
+    uint64_t range_offset;
+    access_t type;
+};
+
 class Access {
 public:
 	access_t 	type;
@@ -85,7 +92,7 @@ public:
 	uint64_t    offset;
 	lock_t lock_type;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 ||  CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK || CC_ALG == RDMA_MIX_RANGE_LOCK
 	uint64_t    location;   //node id of server the data location
 	uint64_t    offset;
 	uint64_t    leaf_offset;
@@ -115,11 +122,15 @@ public:
 	//vector<Access*> accesses;
 	Array<Access*> accesses;
     Array<record_intent_lock*> locked_node;
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK ||  CC_ALG == RDMA_MIX_RANGE_LOCK
     uint64_t range_node_set[100];
     uint64_t server_set[100];
     int locked_range_num;
 #endif
+// #if CC_ALG == RDMA_SIGLE_RANGE_LOCK
+//     range_node_preserve range_node_access[100];
+//     int locked_range_num;
+// #endif
 	uint64_t timestamp;
 	// For OCC and SSI
 	uint64_t start_timestamp;
@@ -256,7 +267,7 @@ public:
 	void release_locks(yield_func_t &yield, RC rc, uint64_t cor_id);
 
 	bool rdma_one_side() {
-	if (CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_MAAT || CC_ALG ==RDMA_TS1 ||CC_ALG ==RDMA_TS || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_DSLR_NO_WAIT || CC_ALG == RDMA_MOCC|| CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT3) return true;
+	if (CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_MAAT || CC_ALG ==RDMA_TS1 ||CC_ALG ==RDMA_TS || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_DSLR_NO_WAIT || CC_ALG == RDMA_MOCC|| CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK ||  CC_ALG == RDMA_MIX_RANGE_LOCK) return true;
 	else return false;
 	}
 
@@ -282,6 +293,7 @@ public:
 	uint64_t faa_remote_content(yield_func_t &yield, uint64_t target_server,uint64_t remote_offset, uint64_t cor_id);
     bool loop_cas_remote(uint64_t target_server, uint64_t remote_offset, uint64_t old_value,uint64_t new_value);
     RC preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_row,access_t type,uint64_t key,uint64_t loc,uint64_t *wid = NULL);
+    RC preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_row,access_t type,double decimal_key,uint64_t loc,uint64_t* wid = NULL);
     RC preserve_access(row_t *&row_local, itemid_t* m_item, row_t *test_row, access_t type, uint64_t key, uint64_t loc, lock_t lock_type);
 #if BATCH_FAA
 	uint64_t local_record_faa(uint64_t req_key,uint64_t loc,uint64_t pointer);
@@ -307,10 +319,15 @@ public:
     bool x_lock_content(uint64_t lock);
     bool ix_lock_content(uint64_t lock);
     rdma_bt_node * read_left_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,uint64_t left_range,uint64_t &left_range_node_offset);
+    rdma_bt_node * read_left_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,double left_range,uint64_t &left_range_node_offset);
+    rdma_bt_node * read_insert_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,double insert_key,uint64_t &left_range_node_offset);
+    RC try_insert_new_data(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,double insert_key,INDEX *index);
     LeafIndexInfo * read_left_leaf_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,uint64_t left_range,uint64_t &left_range_node_offset);
     void read_continuous_index(yield_func_t &yield,int target_server,int batch_num, uint64_t *batch_key_vector, itemid_t **batch_index_vector, uint64_t cor_id);
     void read_continuous_row(yield_func_t &yield,int target_server, int batch_num, uint64_t *batch_key_vector, itemid_t **batch_index_vector,row_t * row_local, uint64_t cor_id);
     RC preserve_continuous_access(itemid_t *m_item,uint64_t first_key,uint64_t last_key);
+    void split_leaf_index_node(rdma_bt_node *&index_node_to_insert,rdma_bt_node *&new_index_node,rdma_bt_node *&parent_node,double insert_key,uint64_t right_offset);
+    void modify_parent_node(rdma_bt_node *&index_node_to_insert,rdma_bt_node *&new_index_node,rdma_bt_node *&parent_node,double insert_key,double *temp_keys,uint64_t right_offset);
     //!need check
 //***********coroutine**********//
 	row_t * read_remote_row(yield_func_t &yield, uint64_t target_server, uint64_t remote_offset, uint64_t cor_id);
@@ -378,7 +395,7 @@ public:
 	int				num_atomic_retry; //num of txn atomic_retry
 #endif
 
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK ||  CC_ALG == RDMA_MIX_RANGE_LOCK
     int             write_set[100];
     int*            read_set;
 	int				num_atomic_retry; //num of txn atomic_retry
@@ -529,6 +546,7 @@ protected:
 	itemid_t *      index_read(INDEX * index, idx_key_t key, int part_id);
 	itemid_t *      index_read(INDEX * index, idx_key_t key, int part_id, int count);
     rdma_bt_node *      index_node_read(INDEX *index, idx_key_t key, int part_id);
+    rdma_bt_node *      find_index_node_to_insert(INDEX *index, double key, int part_id);
     LeafIndexInfo*       learn_index_node_read(INDEX *index, idx_key_t key, int part_id);
 	RC get_lock(row_t * row, access_t type);
 	//RC get_row(row_t * row, access_t type, row_t *& row_rtn);

@@ -46,6 +46,12 @@ public:
     RC          index_remove(idx_key_t key) {return RCOK;};
     RC          get_btree_layer();
     RC learn_index_node_read(idx_key_t key, LeafIndexInfo *&leaf_node, int part_id = -1, int thd_id = 0){}
+     bool 		index_exist(rdma_idx_key_t key); // check if the key exist.
+	RC 			index_insert(rdma_idx_key_t key, itemid_t * item, int part_id = -1);
+    RC          index_read(rdma_idx_key_t key, itemid_t *&item, int part_id = -1, int thd_id = 0);
+    RC          index_node_read(rdma_idx_key_t key, rdma_bt_node *&leaf_node, int part_id = -1, int thd_id = 0);
+    RC          find_index_node_to_insert(rdma_idx_key_t key, rdma_bt_node *&leaf_node, int part_id, int thd_id);
+	RC	 		index_read(rdma_idx_key_t key, itemid_t * &item);
 
 private:
 	// index structures may have part_cnt = 1 or PART_CNT.
@@ -66,6 +72,18 @@ private:
 	RC 			insert_into_parent(glob_param params, rdma_bt_node * left, idx_key_t key, rdma_bt_node * right);
 	RC 			insert_into_new_root(glob_param params, rdma_bt_node * left, idx_key_t key, rdma_bt_node * right);
 
+ 	RC find_leaf(glob_param params, rdma_idx_key_t key, idx_acc_t access_type, rdma_bt_node *&leaf,rdma_bt_node *&last_ex);
+    RC 			find_leaf(glob_param params, rdma_idx_key_t key, idx_acc_t access_type, rdma_bt_node *& leaf);
+	RC			insert_into_leaf(glob_param params, rdma_bt_node * leaf, rdma_idx_key_t key, itemid_t * item);
+	// handle split
+	RC 			split_lf_insert(glob_param params, rdma_bt_node * leaf, rdma_idx_key_t key, itemid_t * item);
+  	RC split_nl_insert(glob_param params, rdma_bt_node *node, UInt32 left_index, rdma_idx_key_t key,
+					 rdma_bt_node *right);
+	RC 			insert_into_parent(glob_param params, rdma_bt_node * left, rdma_idx_key_t key, rdma_bt_node * right);
+	RC 			insert_into_new_root(glob_param params, rdma_bt_node * left, rdma_idx_key_t key, rdma_bt_node * right);
+    // int			leaf_has_key(rdma_bt_node * leaf, rdma_idx_key_t key);
+	int			leaf_has_key(rdma_bt_node * leaf, rdma_idx_key_t key);
+
 	int			leaf_has_key(rdma_bt_node * leaf, idx_key_t key);
 
 	UInt32 		cut(UInt32 length);
@@ -84,6 +102,7 @@ private:
 	UInt32 ** 		cur_idx_per_thd;
     bool in_init;
     root_offset_struct *root_offset;
+	rdma_bt_node *rdma_btree_node;    
 };
 
 #endif

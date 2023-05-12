@@ -55,14 +55,17 @@
   #define USE_DBPAOR true
 #elif RDMA_SIT == SIT_ALL
   #define RDMA_ONE_SIDE true
-  #define RDMA_TWO_SIDE true
+  #define RDMA_TWO_SIDE false
   #define USE_COROUTINE true
   #define USE_DBPAOR true
 #endif
 
 /******MIX WORKLOAD********/
 #define MIX_WORKLOAD 1
-#define CONTINUOUS_TXN_PERC 0.9
+#define DYNAMIC_WORKLOAD 1
+#define CONTINUOUS_TXN_PERC 0.5
+#define INSERT_TXN_PERC 0.05
+#define DELETE_TXN_PERC 0
 #define MAX_LOCK_LAYER 1 //root-0;child of root-1
 
 /***learn index***/
@@ -71,6 +74,7 @@
 /************RDMA TYPE**************/
 #define CHANGE_TCP_ONLY 0
 #define CHANGE_MSG_QUEUE 1
+#define NO_CHANGE 2
 
 #define HIS_CHAIN_NUM 4
 #define USE_CAS
@@ -121,7 +125,7 @@
 /***********************************************/
 // Simulation + Hardware
 /***********************************************/
-#define NODE_CNT 4
+#define NODE_CNT 2
 #define THREAD_CNT 8
 #define REM_THREAD_CNT 1
 #define SEND_THREAD_CNT 1
@@ -177,7 +181,7 @@
 // Memory System
 /***********************************************/
 // Three different memory allocation methods are supported.
-// 1. default libc malloc
+// 1. default libc malloc 
 // 2. per-thread malloc. each thread has a private local memory
 //    pool
 // 3. per-partition malloc. each partition has its own memory pool
@@ -243,9 +247,11 @@
 /***********************************************/
 // USE RDMA
 /**********************************************/
-#if (CC_ALG == RDMA_MAAT || CC_ALG == RDMA_SILO || CC_ALG == RDMA_MVCC || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_TS1 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_CICADA || CC_ALG == RDMA_CNULL || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_MOCC || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT3 || RDMA_TWO_SIDE == true) && RDMA_SIT != 0
+#if RDMA_TWO_SIDE
 // #define USE_RDMA CHANGE_MSG_QUEUE
 #define USE_RDMA CHANGE_TCP_ONLY
+#else
+#define USE_RDMA NO_CHANGE
 #endif
 #define RDMA_BUFFER_SIZE (1<<26)
 #define RDMA_CYC_QP_NUM (1<<10)
@@ -380,10 +386,10 @@
 #define DATA_PERC 100
 #define ACCESS_PERC 0.03
 #define INIT_PARALLELISM 1
-#define SYNTH_TABLE_SIZE 33554432
+#define SYNTH_TABLE_SIZE 2097152
 #define ZIPF_THETA 0.4
 #define TXN_WRITE_PERC 1
-#define TUP_WRITE_PERC 1
+#define TUP_WRITE_PERC 0
 #define SCAN_PERC           0
 #define SCAN_LEN          20
 #define PART_PER_TXN 2
@@ -588,6 +594,11 @@ enum PPSTxnType {
 #define RDMA_OPT_NO_WAIT2 50
 #define RDMA_OPT_NO_WAIT3 51 //intent lock are used
 #define OPT_NO_WAIT3 52
+#define NEXT_KEY_LOCK 53
+#define RDMA_DOUBLE_RANGE_LOCK 54
+#define RDMA_SINGLE_RANGE_LOCK 55
+#define RDMA_MIX_RANGE_LOCK 56
+#define RDMA_NEXT_KEY_LOCK 57
 
 #define HOT_THRESHOLD 350
 // TIMESTAMP allocation method.
@@ -637,7 +648,7 @@ enum PPSTxnType {
 #define PROG_TIMER 10 * BILLION // in s
 #define BATCH_TIMER 0
 #define SEQ_BATCH_TIMER 5 * 1 * MILLION // ~5ms -- same as CALVIN paper
-#define DONE_TIMER 1 * 20 * BILLION // ~1 minutes
+#define DONE_TIMER 1 * 10 * BILLION // ~1 minutes
 #define WARMUP_TIMER 1 * 10 * BILLION // ~1 minutes
 
 #define SEED 0

@@ -351,7 +351,7 @@ RC index_btree::find_leaf(glob_param params, idx_key_t key, idx_acc_t access_typ
 		return RCOK;
 	}
 	// key should be inserted into the right side of i
-  if (!latch_node(c, LATCH_SH)) return Abort;
+  	if (!latch_node(c, LATCH_SH)) return Abort;
 	while (!c->is_leaf) {
         //TODO - need check:preserve?
 		// assert(get_part_id(c) == params.part_id);

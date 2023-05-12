@@ -65,7 +65,7 @@ void MessageThread::send_batch(uint64_t dest_node_id) {
     DEBUG("Send batch of %ld msgs to %ld\n",sbuf->cnt,dest_node_id);
     fflush(stdout);
     sbuf->set_send_time(get_sys_clock());
-#ifdef USE_RDMA
+#if USE_RDMA  == CHANGE_MSG_QUEUE || USE_RDMA == CHANGE_TCP_ONLY
     tport_man.rdma_send_msg(_thd_id, dest_node_id, sbuf->buffer, sbuf->ptr);
 #else
     tport_man.send_msg(_thd_id,dest_node_id,sbuf->buffer,sbuf->ptr);

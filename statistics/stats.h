@@ -133,6 +133,8 @@ public:
   uint64_t x_content_abort;
   uint64_t ix_content_abort;
 
+  uint64_t insert_abort1;
+
   uint64_t remote_index_get_operation;
 
   // Transaction stats

@@ -37,7 +37,7 @@ void InputThread::setup() {
 
 	std::vector<Message*> * msgs;
 	while(!simulation->is_setup_done()) {
-#ifdef USE_RDMA
+#if USE_RDMA == CHANGE_TCP_ONLY
         msgs = tport_man.rdma_recv_msg(get_thd_id());
 #else
 		msgs = tport_man.recv_msg(get_thd_id());
@@ -117,7 +117,7 @@ RC InputThread::client_recv_loop() {
 	while (!simulation->is_done()) {
 		heartbeat();
 		uint64_t starttime = get_sys_clock();
-#ifdef USE_RDMA
+#if USE_RDMA == CHANGE_TCP_ONLY
         msgs = tport_man.rdma_recv_msg(get_thd_id());
 #else
 		msgs = tport_man.recv_msg(get_thd_id());
@@ -255,7 +255,7 @@ RC InputThread::server_recv_loop() {
 		heartbeat();
 		starttime = get_sys_clock();
 
-#ifdef USE_RDMA
+#if USE_RDMA == CHANGE_TCP_ONLY
         msgs = tport_man.rdma_recv_msg(get_thd_id());
 #else
 		msgs = tport_man.recv_msg(get_thd_id());

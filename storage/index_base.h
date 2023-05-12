@@ -46,16 +46,39 @@ public:
   volatile uint64_t intent_lock; //IS|IX|S|X
   // uint64_t 
 	bool is_leaf;
-	UInt32 num_keys;
 	bool latch;
 	pthread_mutex_t locked;
 	latch_t latch_type;
 	UInt32 share_cnt;
-  uint64_t child_offsets[BTREE_ORDER];
+  uint64_t child_offsets[BTREE_ORDER + 1];
   uint64_t parent_offset;
   uint64_t next_node_offset;
+  uint64_t prev_node_offset;
+	// idx_key_t keys[BTREE_ORDER];
+#if !DYNAMIC_WORKLOAD
 	idx_key_t keys[BTREE_ORDER];
-  void * pointers[BTREE_ORDER];
+#else
+    double keys[BTREE_ORDER + 1];
+#endif
+	UInt32 num_keys;
+    void * pointers[BTREE_ORDER + 1];
+    void init(){
+        intent_lock = 0;
+        num_keys = 0;
+    }
+    void init_new_leaf(){
+       intent_lock = 0; 
+	   is_leaf = true;
+       parent_offset = 0;
+       next_node_offset = 0;
+       prev_node_offset = 0;
+       num_keys = 0;
+       for(int i = 0;i < BTREE_ORDER;i++){
+            child_offsets[i] = UINT64_MAX;
+            keys[i] = 0;
+            pointers[i] = NULL;
+       }
+    }
 };
 
 class index_base {

@@ -50,7 +50,7 @@ Data:	MSG_SIZE - HDR_SIZE bytes
 	 */
 
 #define GET_RCV_NODE_ID(b)  ((uint32_t*)b)[0]
-#ifdef USE_RDMA
+#if USE_RDMA  == CHANGE_MSG_QUEUE || USE_RDMA == CHANGE_TCP_ONLY
 class SimpleAllocator : public AbsRecvAllocator {
   RMem::raw_ptr_t buf = nullptr;
   usize total_mem = 0;
@@ -87,7 +87,7 @@ class Socket {
 		nn::socket sock;
         //char _pad[CL_SIZE - sizeof(nn::socket)];//?usage of _pad
 };
-#ifdef USE_RDMA
+#if USE_RDMA  == CHANGE_MSG_QUEUE || USE_RDMA == CHANGE_TCP_ONLY
 class rdma_send_qps{
   public:
     rdmaio::Arc<rdmaio::qp::RDMARC> send_qps;
@@ -135,7 +135,7 @@ class Transport {
 		uint64_t simple_recv_msg();
     void create_server(uint64_t port, uint64_t dest_node_id);
     void create_client(uint64_t port, uint64_t dest_node_id);
-#ifdef USE_RDMA
+#if USE_RDMA  == CHANGE_MSG_QUEUE || USE_RDMA == CHANGE_TCP_ONLY
     //client need
     rdmaio::Arc<rdmaio::RNic> nic;
     //-----------------send------------------//

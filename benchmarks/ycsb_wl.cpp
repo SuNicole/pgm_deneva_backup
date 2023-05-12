@@ -123,6 +123,7 @@ RC YCSBWorkload::init_table() {
 //			uint64_t value = rand();
 			uint64_t primary_key = total_row;
 			new_row->set_primary_key(primary_key);
+            new_row->set_decimal_key(double(primary_key));
             new_row->set_value(0, &primary_key);
 			Catalog * schema = the_table->get_schema();
 			for (UInt32 fid = 0; fid < schema->get_field_cnt(); fid ++) {
@@ -239,6 +240,7 @@ void * YCSBWorkload::init_table_slice() {
 //		uint64_t value = rand();
 		uint64_t primary_key = key;
 		new_row->set_primary_key(primary_key);
+		new_row->set_decimal_key(double(primary_key));
 #if SIM_FULL_ROW
 		new_row->set_value(0, &primary_key,sizeof(uint64_t));
 

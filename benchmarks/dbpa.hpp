@@ -66,7 +66,6 @@ public:
         sr[i].wr.atomic.rkey = qp_ptr->remote_mr.value().key;
         sge[i].lkey = qp_ptr->local_mr.value().lkey;
       }
-    //   else if(sr[i].opcode == IBV_WR_RDMA_READ || sr[i].opcode == IBV_WR_RDMA_WRITE){
         else{
         sr[i].wr.rdma.rkey = qp_ptr->remote_mr.value().key;
         sge[i].lkey = qp_ptr->local_mr.value().lkey;

@@ -74,6 +74,8 @@ private:
   RC run_txn_state(yield_func_t &yield, uint64_t cor_id);
 // #if CC_ALG == RDMA_OPT_NO_WAIT3
   RC run_continuous_txn(yield_func_t &yield, uint64_t cor_id);
+  RC run_delete_txn(yield_func_t &yield, uint64_t cor_id);
+  RC run_insert_txn(yield_func_t &yield, uint64_t cor_id);
 // #endif
   RC tcp_run_continuous_txn(yield_func_t &yield, uint64_t cor_id);
   RC tcp_local_run_continuous_txn(yield_func_t &yield, uint64_t cor_id);

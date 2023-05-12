@@ -45,6 +45,7 @@
 #include "row_rdma_opt_2pl.h"
 #include "row_rdma_opt_no_wait3.h"
 #include "row_opt_no_wait3.h"
+#include "row_rdma_range_lock.h"
 #include "row_rdma_ts1.h"
 #include "row_rdma_mocc.h"
 #include "row_rdma_dslr_no_wait.h"
@@ -146,6 +147,10 @@ RC row_t::init(table_t *host_table, uint64_t part_id, uint64_t row_id) {
 	conflict_num = 0;
 	is_hot = false;
 	lock_info = 0;
+#endif
+#if CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+    _tid_word = 0;
+    conflict_num = 0;
 #endif
 #if CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT
     lock_type = 0;
@@ -268,6 +273,8 @@ void row_t::init_manager(row_t * row) {
   manager = (Row_rdma_cicada *) mem_allocator.align_alloc(sizeof(Row_rdma_cicada));
 #elif CC_ALG == CICADA
 	manager = (Row_cicada *) mem_allocator.align_alloc(sizeof(Row_cicada));
+#elif CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+    manager = (Row_rdma_range_lock *) mem_allocator.align_alloc(sizeof(Row_rdma_range_lock));
 #elif CC_ALG == RDMA_BAMBOO_NO_WAIT
     manager = (Row_rdma_bamboo *) mem_allocator.align_alloc(sizeof(Row_rdma_bamboo));
 #endif
@@ -516,6 +523,19 @@ RC row_t::get_row(yield_func_t &yield,access_t type, TxnManager *txn, Access *ac
   access->data = txn->cur_row;
 	//assert(rc == RCOK);
   INC_STATS(txn->get_thd_id(), trans_cur_row_copy_time, get_sys_clock() - copy_time);
+	goto end;
+#endif
+
+#if CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+    lock_t lock_type = LOCK_NONE;
+	rc = this->manager->lock_get(yield, type, txn, this, cor_id, req_key,m_item->leaf_node_offset);
+	if (rc != Abort) {
+        // printf("[row.cpp:488]get lock\n");
+		row_t * newr = (row_t *) mem_allocator.alloc(row_t::get_row_size(tuple_size));
+		newr->init(this->get_table(), this->get_part_id());
+		newr->copy(this);
+		access->data = newr;        
+	}
 	goto end;
 #endif
 
@@ -978,7 +998,7 @@ uint64_t row_t::return_row(RC rc, access_t type, TxnManager *txn, row_t *row) {
 	}
 	this->manager->lock_release(txn);
 	return 0;
-#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_DSLR_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT3
+#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_DSLR_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
 	assert (row == NULL || row == this || type == XP || CC_ALG == RDMA_DSLR_NO_WAIT);
 	if (CC_ALG != RDMA_DSLR_NO_WAIT && ROLL_BACK && type == XP) {  // recover from previous writes.
 		this->copy(row);  //for abort of local txn ABORT, copy orig_data to orig_row. remote ABORT dont need this operate

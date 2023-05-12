@@ -1099,8 +1099,10 @@ RC WorkerThread::process_crqry_rsp(yield_func_t &yield, Message * msg, uint64_t 
   return RCOK;
 }
 
+
 //TODO: 是个雷
 RC WorkerThread::process_idx_info(yield_func_t &yield, Message * msg, uint64_t cor_id){
+  
     g_init_done[msg->return_node_id] = true;
     printf("Received IDX_INFO from node %ld\n",msg->return_node_id);
     // fflush(stdout);

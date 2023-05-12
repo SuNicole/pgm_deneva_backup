@@ -61,6 +61,7 @@
 #include "rdma_2pl.h"
 #include "rdma_dslr_no_wait.h"
 #include "rdma_opt_no_wait3.h"
+#include "rdma_range_lock.h"
 #include "rdma_bamboo.h"
 #include "rdma_opt_2pl.h"
 #include "rdma_maat.h"
@@ -294,7 +295,7 @@ void Transaction::init() {
 #if CC_ALG == RDMA_BAMBOO_NO_WAIT
     dependency_txn.init(100);
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
     locked_range_num = 0;
 #endif
 	DEBUG_M("Transaction::reset array accesses\n");
@@ -312,7 +313,7 @@ void Transaction::reset(uint64_t thd_id) {
 	insert_rows.clear();
 	write_cnt = 0;
 	row_cnt = 0;
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
     locked_range_num = 0;
 #endif
 	twopc_state = START;
@@ -445,7 +446,7 @@ void TxnManager::init(uint64_t thd_id, Workload * h_wl) {
     rdma_txn_table.release(get_thd_id(), get_txn_id());
 #endif
 
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
     remote_operate_num = 0;
 #endif
 	registed_ = false;
@@ -504,7 +505,7 @@ void TxnManager::reset() {
 #if CC_ALG == RDMA_MAAT || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WOUND_WAIT
     rdma_txn_table.release(get_thd_id(), get_txn_id());
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
     remote_operate_num = 0;
 #endif
 	assert(txn);
@@ -558,7 +559,7 @@ void TxnManager::release() {
   memset(write_set, 0, 100);
   // mem_allocator.free(write_set, sizeof(int) * 100);
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
     remote_operate_num = 0;
 #endif 
 	txn_ready = true;
@@ -640,7 +641,7 @@ RC TxnManager::commit(yield_func_t &yield, uint64_t cor_id) {
 }
 
 RC TxnManager::abort(yield_func_t &yield, uint64_t cor_id) {
-	if (aborted) return Abort;
+	if (aborted) {printf("[txn.cpp:644]\n");;return Abort;}
 #if CC_ALG == SSI
 	inout_table.set_state(get_thd_id(), get_txn_id(), SSI_ABORTED);
 	inout_table.clear_Conflict(get_thd_id(), get_txn_id());
@@ -838,7 +839,7 @@ RC TxnManager::start_commit(yield_func_t &yield, uint64_t cor_id) {
 		else {
 			txn->rc = Abort;
 			DEBUG("%ld start_abort\n",get_txn_id());
-			if(query->partitions_touched.size() > 1 && CC_ALG != RDMA_SILO &&  CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_MAAT && CC_ALG != RDMA_CICADA && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_MOCC && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE && CC_ALG != RDMA_BAMBOO_NO_WAIT && CC_ALG != RDMA_OPT_NO_WAIT2 && CC_ALG != RDMA_OPT_NO_WAIT3) {
+			if(query->partitions_touched.size() > 1 && CC_ALG != RDMA_SILO &&  CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_MAAT && CC_ALG != RDMA_CICADA && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_MOCC && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE && CC_ALG != RDMA_BAMBOO_NO_WAIT && CC_ALG != RDMA_OPT_NO_WAIT2 && CC_ALG != RDMA_OPT_NO_WAIT3 && CC_ALG != RDMA_DOUBLE_RANGE_LOCK && CC_ALG != RDMA_SINGLE_RANGE_LOCK) {
 				send_finish_messages();
 				abort(yield, cor_id);
 				rc = Abort;
@@ -1180,7 +1181,7 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
   #endif
     }
   }
-#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT|| CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT  || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT3// ||  CC_ALG == RDMA_DSLR_NO_WAIT
+#elif CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT|| CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT  || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK// ||  CC_ALG == RDMA_DSLR_NO_WAIT
 	if(txn->accesses[rid]->location == g_node_id) is_local=true;
 	else is_local=false;
 
@@ -1282,7 +1283,7 @@ void TxnManager::cleanup_row(yield_func_t &yield, RC rc, uint64_t rid, vector<ve
 		glob_manager.set_max_cts(_min_commit_ts);
 #endif
 
-#if CC_ALG != SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE && CC_ALG != RDMA_BAMBOO_NO_WAIT && CC_ALG != RDMA_OPT_NO_WAIT2 && CC_ALG != RDMA_OPT_NO_WAIT3
+#if CC_ALG != SILO && CC_ALG != RDMA_NO_WAIT && CC_ALG != RDMA_NO_WAIT2 && CC_ALG != RDMA_WAIT_DIE2 && CC_ALG != RDMA_WOUND_WAIT2 && CC_ALG != RDMA_WAIT_DIE && CC_ALG != RDMA_WOUND_WAIT && CC_ALG != RDMA_OPT_NO_WAIT && CC_ALG != RDMA_OPT_WAIT_DIE && CC_ALG != RDMA_BAMBOO_NO_WAIT && CC_ALG != RDMA_OPT_NO_WAIT2 && CC_ALG != RDMA_OPT_NO_WAIT3 && CC_ALG != RDMA_DOUBLE_RANGE_LOCK && CC_ALG != RDMA_SINGLE_RANGE_LOCK
   txn->accesses[rid]->data = NULL;
 #endif
 }
@@ -1385,6 +1386,10 @@ void TxnManager::cleanup(yield_func_t &yield, RC rc, uint64_t cor_id) {
 
 #if CC_ALG == RDMA_OPT_NO_WAIT3
     nowait3_man.finish(yield, rc, this, cor_id);
+#endif
+
+#if CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+    rangelock_man.finish(yield,rc,this,cor_id);
 #endif
 #if CC_ALG == DLI_BASE || CC_ALG == DLI_OCC || CC_ALG == DLI_MVCC_OCC || CC_ALG == DLI_DTA || CC_ALG == DLI_DTA2 || CC_ALG == DLI_DTA3 || \
 		CC_ALG == DLI_MVCC_BASE
@@ -1537,7 +1542,7 @@ if(rc != Abort){
 	access->location = g_node_id;
 	access->offset = (char*)row - rdma_global_buffer;
 #endif
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
     access->location = g_node_id;
 	access->offset = (char*)row - rdma_global_buffer;
     access->leaf_offset = m_item->leaf_node_offset;
@@ -1567,7 +1572,7 @@ if(rc != Abort){
 	
 #endif
 
-#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT3)
+#if ROLL_BACK && (CC_ALG == DL_DETECT || CC_ALG == RDMA_WAIT_DIE2 || CC_ALG == RDMA_NO_WAIT || CC_ALG == RDMA_NO_WAIT2 || CC_ALG == NO_WAIT || CC_ALG == WAIT_DIE || CC_ALG == HSTORE || CC_ALG == HSTORE_SPEC || CC_ALG == RDMA_WOUND_WAIT2 || CC_ALG == WOUND_WAIT || CC_ALG == RDMA_WAIT_DIE || CC_ALG == RDMA_WOUND_WAIT || CC_ALG == RDMA_OPT_NO_WAIT || CC_ALG == RDMA_OPT_WAIT_DIE || CC_ALG == RDMA_BAMBOO_NO_WAIT || CC_ALG == RDMA_OPT_NO_WAIT2 || CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK)
 	if (type == WR) {
 	//printf("alloc 10 %ld\n",get_txn_id());
 	uint64_t part_id = row->get_part_id();
@@ -3324,110 +3329,110 @@ RC TxnManager::get_remote_row(yield_func_t &yield, access_t type, uint64_t loc, 
     #endif
 
     #if CC_ALG == RDMA_OPT_NO_WAIT
-    uint64_t remote_lock_info_pointer = row_t::get_lock_info_pointer(m_item->offset);
-    uint64_t remote_rcnt_pos_pointer = row_t::get_rcnt_pos_pointer(m_item->offset);	
-    uint64_t remote_conflict_pointer = m_item->offset;
-    uint64_t new_lock_info = get_txn_id() + 1;
-	rc = RCOK;
-    lock_t lock_type = LOCK_NONE;
-	row_t * test_row = NULL;
-	if(type == RD || type == SCAN) {
-		uint64_t try_lock = -1;
-		#if USE_DBPAOR && 0
-			// test_row = cas_and_read_remote(yield, try_lock,loc,remote_lock_info_pointer,remote_conflict_pointer,0,new_lock_info,cor_id);
-			// if(try_lock != 0){ //CAS fail: Ignore read content 
-			// 	faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
-			// 	row_local = NULL;
-			// 	txn->rc = Abort;
-			// 	mem_allocator.free(m_item, sizeof(itemid_t));
-			// 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-			// 	return Abort; //原子性被破坏，CAS失败			
-			// }		
-		#else
-			try_lock = cas_remote_content(yield,loc,remote_lock_info_pointer,0,new_lock_info,cor_id);
-			if(try_lock != 0){ //cas fail 
-#if !ALL_ES_LOCK
-#if BATCH_FAA
-				local_record_faa(req->key, loc, remote_conflict_pointer);
-#else
-				faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
-#endif
-#endif 
-				row_local = NULL;
-				txn->rc = Abort;
-				mem_allocator.free(m_item, sizeof(itemid_t));
-                INC_STATS(get_thd_id(), opt_no_wait_abort5, 1);
-				return Abort; //原子性被破坏，CAS失败						
-			}
-			//cas success: read remote data
-			test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);
-		#endif
-		// assert(test_row->get_primary_key() == req->key);
-#if !ALL_ES_LOCK
-		if(test_row->rcnt_pos - test_row->rcnt_neg > 0){
-#if BATCH_FAA
-			local_record_faa(req->key, loc, remote_conflict_pointer);
-#else
-			faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
-#endif
-		} 
-#endif
-		if (test_row->is_hot) {
-            test_row->rcnt_pos ++;
-            test_row->lock_info = 0;
-            lock_type = DLOCK_SH;
-			uint64_t local_rcnt_pos_pointer = row_t::get_rcnt_pos_pointer((uint64_t)test_row);
-			assert(write_remote_row(yield,loc,sizeof(test_row->lock_info)+sizeof(test_row->rcnt_pos),remote_rcnt_pos_pointer,(char *)local_rcnt_pos_pointer, cor_id) == true);
-        } 
-		else if(test_row->rcnt_pos - test_row->rcnt_neg > 0) {
-			test_row->lock_info = 0;
-			uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)test_row);
-			assert(write_remote_row(yield,loc,sizeof(test_row->lock_info),remote_lock_info_pointer, (char*)local_lock_info_pointer, cor_id) == true);
-            INC_STATS(get_thd_id(), opt_no_wait_abort6, 1);
-			return Abort;
-        } 
-		else {
-			lock_type = DLOCK_EX;
-		}
-        rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
-		return rc;
-	}else if (type == WR){
-		uint64_t try_lock = -1;
-	#if USE_DBPAOR == true && 0
-		// test_row = cas_and_read_remote(yield, try_lock,loc,remote_lock_info_pointer,remote_conflict_pointer,0,new_lock_info,cor_id);
-		// if(try_lock != 0){ //CAS fail: Ignore read content 
-		// 	row_local = NULL;
-		// 	txn->rc = Abort;
-		// 	mem_allocator.free(m_item, sizeof(itemid_t));
-		// 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
-		// 	return Abort; //原子性被破坏，CAS失败			
-		// }		
-	#else
-		try_lock = cas_remote_content(yield,loc,remote_lock_info_pointer,0,new_lock_info,cor_id);
-		if(try_lock != 0){ //cas fail 
-				row_local = NULL;
-				txn->rc = Abort;
-				mem_allocator.free(m_item, sizeof(itemid_t));
-                INC_STATS(get_thd_id(), opt_no_wait_abort7, 1);
-				return Abort; //原子性被破坏，CAS失败						
-		}
-		//cas success: read remote data
-		test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);
-	#endif
-		// assert(test_row->get_primary_key() == req->key);
-		if(test_row->rcnt_pos - test_row->rcnt_neg > 0) {
-			test_row->lock_info = 0;
-			uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)test_row);
-            // faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
-			assert(write_remote_row(yield,loc,sizeof(uint64_t), remote_lock_info_pointer, (char *)local_lock_info_pointer, cor_id) == true);
-            INC_STATS(get_thd_id(), opt_no_wait_abort8, 1);
-			return Abort;
-        } else {
-			lock_type = DLOCK_EX;
-		}
-        rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
-		return rc;
-	}
+        uint64_t remote_lock_info_pointer = row_t::get_lock_info_pointer(m_item->offset);
+        uint64_t remote_rcnt_pos_pointer = row_t::get_rcnt_pos_pointer(m_item->offset);	
+        uint64_t remote_conflict_pointer = m_item->offset;
+        uint64_t new_lock_info = get_txn_id() + 1;
+        rc = RCOK;
+        lock_t lock_type = LOCK_NONE;
+        row_t * test_row = NULL;
+        if(type == RD || type == SCAN) {
+            uint64_t try_lock = -1;
+            #if USE_DBPAOR && 0
+                // test_row = cas_and_read_remote(yield, try_lock,loc,remote_lock_info_pointer,remote_conflict_pointer,0,new_lock_info,cor_id);
+                // if(try_lock != 0){ //CAS fail: Ignore read content 
+                // 	faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+                // 	row_local = NULL;
+                // 	txn->rc = Abort;
+                // 	mem_allocator.free(m_item, sizeof(itemid_t));
+                // 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+                // 	return Abort; //原子性被破坏，CAS失败			
+                // }		
+            #else
+                try_lock = cas_remote_content(yield,loc,remote_lock_info_pointer,0,new_lock_info,cor_id);
+                if(try_lock != 0){ //cas fail 
+    #if !ALL_ES_LOCK
+    #if BATCH_FAA
+                    local_record_faa(req->key, loc, remote_conflict_pointer);
+    #else
+                    faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+    #endif
+    #endif 
+                    row_local = NULL;
+                    txn->rc = Abort;
+                    mem_allocator.free(m_item, sizeof(itemid_t));
+                    INC_STATS(get_thd_id(), opt_no_wait_abort5, 1);
+                    return Abort; //原子性被破坏，CAS失败						
+                }
+                //cas success: read remote data
+                test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);
+            #endif
+            // assert(test_row->get_primary_key() == req->key);
+    #if !ALL_ES_LOCK
+            if(test_row->rcnt_pos - test_row->rcnt_neg > 0){
+    #if BATCH_FAA
+                local_record_faa(req->key, loc, remote_conflict_pointer);
+    #else
+                faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+    #endif
+            } 
+    #endif
+            if (test_row->is_hot) {
+                test_row->rcnt_pos ++;
+                test_row->lock_info = 0;
+                lock_type = DLOCK_SH;
+                uint64_t local_rcnt_pos_pointer = row_t::get_rcnt_pos_pointer((uint64_t)test_row);
+                assert(write_remote_row(yield,loc,sizeof(test_row->lock_info)+sizeof(test_row->rcnt_pos),remote_rcnt_pos_pointer,(char *)local_rcnt_pos_pointer, cor_id) == true);
+            } 
+            else if(test_row->rcnt_pos - test_row->rcnt_neg > 0) {
+                test_row->lock_info = 0;
+                uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)test_row);
+                assert(write_remote_row(yield,loc,sizeof(test_row->lock_info),remote_lock_info_pointer, (char*)local_lock_info_pointer, cor_id) == true);
+                INC_STATS(get_thd_id(), opt_no_wait_abort6, 1);
+                return Abort;
+            } 
+            else {
+                lock_type = DLOCK_EX;
+            }
+            rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
+            return rc;
+        }else if (type == WR){
+            uint64_t try_lock = -1;
+        #if USE_DBPAOR == true && 0
+            // test_row = cas_and_read_remote(yield, try_lock,loc,remote_lock_info_pointer,remote_conflict_pointer,0,new_lock_info,cor_id);
+            // if(try_lock != 0){ //CAS fail: Ignore read content 
+            // 	row_local = NULL;
+            // 	txn->rc = Abort;
+            // 	mem_allocator.free(m_item, sizeof(itemid_t));
+            // 	mem_allocator.free(test_row, row_t::get_row_size(ROW_DEFAULT_SIZE));
+            // 	return Abort; //原子性被破坏，CAS失败			
+            // }		
+        #else
+            try_lock = cas_remote_content(yield,loc,remote_lock_info_pointer,0,new_lock_info,cor_id);
+            if(try_lock != 0){ //cas fail 
+                    row_local = NULL;
+                    txn->rc = Abort;
+                    mem_allocator.free(m_item, sizeof(itemid_t));
+                    INC_STATS(get_thd_id(), opt_no_wait_abort7, 1);
+                    return Abort; //原子性被破坏，CAS失败						
+            }
+            //cas success: read remote data
+            test_row = read_remote_row(yield,loc,remote_conflict_pointer,cor_id);
+        #endif
+            // assert(test_row->get_primary_key() == req->key);
+            if(test_row->rcnt_pos - test_row->rcnt_neg > 0) {
+                test_row->lock_info = 0;
+                uint64_t local_lock_info_pointer = row_t::get_lock_info_pointer((uint64_t)test_row);
+                // faa_remote_content(yield,loc,remote_conflict_pointer,cor_id);
+                assert(write_remote_row(yield,loc,sizeof(uint64_t), remote_lock_info_pointer, (char *)local_lock_info_pointer, cor_id) == true);
+                INC_STATS(get_thd_id(), opt_no_wait_abort8, 1);
+                return Abort;
+            } else {
+                lock_type = DLOCK_EX;
+            }
+            rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc, lock_type);
+            return rc;
+        }
     #endif
 
     #if CC_ALG == RDMA_OPT_WAIT_DIE
@@ -3807,7 +3812,7 @@ write_wait_here:
 	}
     #endif
 
-    #if CC_ALG == RDMA_OPT_NO_WAIT3
+    #if CC_ALG == RDMA_OPT_NO_WAIT3 
 
 	rc = RCOK;
     lock_t lock_type = LOCK_NONE;
@@ -3815,34 +3820,39 @@ write_wait_here:
 
 	if(type == RD || type == SCAN) {
         //range lock(IS)
-        uint64_t range_lock = m_item->range_lock;
-		if (decode_x_lock(range_lock) > 0) {
-			// printf("[txn.cpp:3806]txn %ld lock failed, has X lock\n", get_txn_id());
-			return Abort;//no X lock
-		}
-        uint64_t faa_num = 1<<48; //add IS lock
-        uint64_t faa_result = 0;
-		faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
-		if (decode_x_lock(faa_result) > 0) {
-            faa_num = (-1)<<48;
-            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
-            // printf("[txn.cpp:3815]txn %ld lock failed, has X lock\n", get_txn_id());
-            return Abort;
-        }
+        // uint64_t range_lock = m_item->range_lock;
+		// if (is_lock_content(range_lock)) {
+		// 	return Abort;//no X lock
+		// }
+        // uint64_t faa_num = 1<<48; //add IS lock
+        // uint64_t faa_result = 0;
+		// faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+		// if (decode_x_lock(faa_result) > 0) {
+        //     faa_num = (-1)<<48;
+        //     faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+        //     // printf("[txn.cpp:3815]txn %ld lock failed, has X lock\n", get_txn_id());
+        //     return Abort;
+        // }
 
+        uint64_t range_lock;
+        uint64_t faa_num,faa_result = 0;
         //data lock(S)
 		test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
         uint64_t data_lock = test_row->_tid_word;
         if(s_lock_content(data_lock)){
-            faa_num = (-1)<<48;
-            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            // faa_num = (-1)<<48;
+            // faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
             // printf("[txn.cpp:3824] txn %ld lock failed, has X?%d lock, has IX?%d lock\n", get_txn_id(), decode_x_lock(data_lock), decode_ix_lock(data_lock));
             return Abort;
         }
 
         faa_num = 1<<16;
         faa_result = faa_remote_content(yield,loc,m_item->offset,faa_num,cor_id);
-        //TODO - check
+        if(s_lock_content(faa_result)){
+            faa_num = (-1)<<16;
+            faa_result = faa_remote_content(yield,loc,m_item->offset,faa_num,cor_id);
+            return Abort;
+        }
 
 		test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
 
@@ -3892,9 +3902,127 @@ write_wait_here:
         rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc);
 		return rc;
 	}
-#endif
-}
+    #endif
 
+    #if CC_ALG == RDMA_DOUBLE_RANGE_LOCK 
+      	rc = RCOK;
+        lock_t lock_type = LOCK_NONE;
+	    row_t * test_row = NULL;
+
+	    if(type == RD) {
+            
+            //data lock(S)
+            uint64_t faa_num;
+            uint64_t faa_result = -1;
+            // test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
+            // uint64_t data_lock = test_row->_tid_word;
+            // if(data_lock == 1){
+            //     return Abort;
+            // }
+
+            faa_num = 1<<1;
+            faa_result = faa_remote_content(yield,loc,m_item->offset,faa_num,cor_id);
+            //TODO - check
+            if(faa_result == 1){
+                faa_num = (-1)<<1;
+                faa_result = faa_remote_content(yield,loc,m_item->offset,faa_num,cor_id);
+                return Abort;
+            }
+
+		    test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
+
+            int tmp = txn->locked_range_num;
+            txn->range_node_set[tmp] = m_item->leaf_node_offset;
+            txn->server_set[tmp] =loc;
+            txn->locked_range_num = txn->locked_range_num + 1; 
+            rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc);
+            return rc;
+	    }else if (type == WR){
+        
+            // printf("[txn.cpp:3932]\n");
+            uint64_t range_lock = m_item->range_lock;
+            uint64_t cas_result = -1;
+
+            //data lock(X)
+            cas_result = cas_remote_content(yield,loc,m_item->offset,0,1,cor_id);
+            if(cas_result != 0){
+                return Abort;
+            }
+
+            // int tmp = txn->locked_range_num;
+            // txn->range_node_set[tmp] = m_item->leaf_node_offset;
+            // txn->server_set[tmp] =loc;
+            // txn->locked_range_num = txn->locked_range_num + 1; 
+
+            test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
+            rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc);
+            
+            return rc;
+	    }
+    #endif
+
+    #if CC_ALG == RDMA_SINGLE_RANGE_LOCK
+      	rc = RCOK;
+        lock_t lock_type = LOCK_NONE;
+	    row_t * test_row = NULL;
+        rdma_bt_node * remote_leaf = NULL;
+
+	    if(type == RD) {
+            
+            //range lock(S)
+            uint64_t faa_num;
+            uint64_t faa_result = -1;
+            uint64_t leaf_lock = m_item->range_lock;
+            if(leaf_lock == 1){
+                return Abort;
+            }
+
+            faa_num = 1<<1;
+            faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+            //TODO - check
+            if(faa_result == 1){
+                faa_num = (-1)<<1;
+                faa_result = faa_remote_content(yield,loc,m_item->leaf_node_offset,faa_num,cor_id);
+                return Abort;
+            }
+
+		    test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
+
+            int tmp = txn->locked_range_num;
+            txn->range_node_set[tmp] = m_item->leaf_node_offset;
+            txn->server_set[tmp] =loc;
+            txn->locked_range_num = txn->locked_range_num + 1; 
+            rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc);
+            return rc;
+	    }else if (type == WR){
+            //range lock(X)
+            // printf("[txn.cpp:3932]\n");
+            uint64_t range_lock = m_item->range_lock;
+            if(range_lock != 0)return Abort;
+            uint64_t faa_num = 1; // X
+            uint64_t cas_result = 1;
+            cas_result = cas_remote_content(yield,loc,m_item->leaf_node_offset,0,1,cor_id);
+            if(cas_result != 0){
+                return Abort;
+            }
+          
+            int tmp = txn->locked_range_num;
+            txn->range_node_set[tmp] = m_item->leaf_node_offset;
+            txn->server_set[tmp] =loc;
+            txn->locked_range_num = txn->locked_range_num + 1; 
+
+            test_row = read_remote_row(yield,loc,m_item->offset,cor_id);
+            rc = preserve_access(row_local,m_item,test_row,type,test_row->get_primary_key(),loc);
+          
+            return rc;
+	    }
+    #endif
+
+    #if CC_ALG == RDMA_MIX_RANGE_LOCK
+
+    #endif
+}
+ 
 RC TxnManager::get_continuous_row(yield_func_t &yield,uint64_t cor_id,itemid_t * m_item,uint64_t first_key,uint64_t last_key){
     bt_node * leaf = (bt_node *)(m_item->parent);
     RC rc = leaf->get_range_lock(m_item);
@@ -3939,7 +4067,7 @@ RC TxnManager::get_continuous_row(yield_func_t &yield,uint64_t cor_id,itemid_t *
 RC TxnManager::preserve_continuous_access(itemid_t *m_item,uint64_t first_key,uint64_t last_key){
     bt_node * leaf = (bt_node *)(m_item->parent);
     for(int i = 0; i < leaf->num_keys; i++){
-        if(leaf->keys[i] > first_key && leaf->keys[i] < last_key){
+        if(leaf->keys[i] > first_key && leaf->keys[i] < last_key&&(txn->accesses.get_count()<g_req_per_query)){
             RC rc = RCOK;
             row_t * read_row = (row_t *)(leaf->pointers[i]);
 	        Access * access = NULL;
@@ -3975,12 +4103,14 @@ void TxnManager::insert_row(row_t * row, table_t * table) {
 itemid_t *TxnManager::index_read(INDEX *index, idx_key_t key, int part_id) {
 	uint64_t starttime = get_sys_clock();
 
-	itemid_t * item;
+	itemid_t * item = NULL;
+	RC rc = RCOK;
 #if INDEX_STRUCT != IDX_BTREE
-	index->index_read(key, item, part_id, get_thd_id());
+	rc = index->index_read(key, item, part_id, get_thd_id());
 #else
-    index->index_read(key, item, get_thd_id(),(uint64_t)part_id);
+    rc = index->index_read(key, item, get_thd_id(),(uint64_t)part_id);
 #endif
+	if (rc == Abort) item = NULL;
 	uint64_t t = get_sys_clock() - starttime;
 	INC_STATS(get_thd_id(), txn_index_time, t);
 	//txn_time_idx += t;
@@ -3988,15 +4118,39 @@ itemid_t *TxnManager::index_read(INDEX *index, idx_key_t key, int part_id) {
 	return item;
 }
 
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK ||  CC_ALG == RDMA_MIX_RANGE_LOCK
 rdma_bt_node *TxnManager::index_node_read(INDEX *index, idx_key_t key, int part_id) {
 	uint64_t starttime = get_sys_clock();
 
-	rdma_bt_node * leaf_node;
-	index->index_node_read(key, leaf_node, part_id, get_thd_id());
-
+	rdma_bt_node * leaf_node = NULL;
+	RC rc = RCOK;
+#if !DYNAMIC_WORKLOAD
+	rc = index->index_node_read(key, leaf_node, part_id, get_thd_id());
+#else
+	rc = index->index_node_read((double)key, leaf_node, part_id, get_thd_id());
+	// index->index_node_read(key, leaf_node, part_id, get_thd_id());
+#endif
+	if (rc == Abort) {
+        printf("[txn.cpp:4134]connot find key=%lf\n",(double)key);
+        leaf_node = NULL;}
 	uint64_t t = get_sys_clock() - starttime;
 	INC_STATS(get_thd_id(), txn_index_time, t);
+	//txn_time_idx += t;
+
+	return leaf_node;
+}
+
+rdma_bt_node *TxnManager::find_index_node_to_insert(INDEX *index, double key, int part_id) {
+	uint64_t starttime = get_sys_clock();
+
+	rdma_bt_node * leaf_node = NULL;
+	RC rc = RCOK;
+#if DYNAMIC_WORKLOAD
+	rc = index->find_index_node_to_insert(key, leaf_node, part_id, get_thd_id());
+	// index->index_node_read(key, leaf_node, part_id, get_thd_id());
+#endif
+	if (rc == Abort) leaf_node = NULL;
+	uint64_t t = get_sys_clock() - starttime;
 	//txn_time_idx += t;
 
 	return leaf_node;
@@ -4687,6 +4841,11 @@ bool TxnManager::x_lock_content(uint64_t lock){
     if(lock != 0)return true;
     else return false;
 }
+
+// bool TxnManager::s_lock_content63(uint64_t lock){
+//     if(lock == 1)return true;
+//     else return false;
+// }
 rdma_bt_node * TxnManager::read_left_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,uint64_t left_range,uint64_t &left_range_node_offset){
     rdma_bt_node * remote_bt_node;
     uint64_t remote_offset = 0;
@@ -4702,7 +4861,7 @@ rdma_bt_node * TxnManager::read_left_index_node(yield_func_t &yield,uint64_t cor
     while(remote_bt_node->is_leaf == false){
         int i = 0;
         for(i = 0;i < remote_bt_node->num_keys;i++){
-            if(left_range < remote_bt_node->keys[i]){
+            if((double)left_range < remote_bt_node->keys[i]){
                 break;
             }
         }
@@ -4712,10 +4871,547 @@ rdma_bt_node * TxnManager::read_left_index_node(yield_func_t &yield,uint64_t cor
         remote_operate_num++;
         left_range_node_offset = remote_offset;  
     }
+    while(remote_bt_node->keys[remote_bt_node->num_keys-1]<left_range){
+        mem_allocator.free(remote_bt_node,0);
+        remote_bt_node = read_remote_bt_node(yield,target_server,remote_bt_node->next_node_offset,cor_id);
+    }
     
     return remote_bt_node;
 }
 
+rdma_bt_node * TxnManager::read_insert_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,double insert_key,uint64_t &range_node_insert_offset){
+    rdma_bt_node * remote_bt_node;
+    uint64_t remote_offset = 0;
+    uint64_t remote_index_offset = 0;
+    //get offset of root of btree
+    remote_offset = cas_remote_content(target_server,0,0,1);
+    remote_operate_num++;
+    assert(remote_offset != 0);
+    remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id);
+    range_node_insert_offset = remote_offset;  
+    remote_operate_num++;
+    
+    while(remote_bt_node->is_leaf == false){
+        int i = 0;
+        for(i = 0;i < remote_bt_node->num_keys;i++){
+            if(insert_key < remote_bt_node->keys[i]){
+                break;
+            }
+        }
+        remote_offset = remote_bt_node->child_offsets[i];
+        mem_allocator.free(remote_bt_node,0);
+        remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id);
+        remote_operate_num++;
+        range_node_insert_offset = remote_offset;  
+    }
+    if(remote_bt_node->keys[remote_bt_node->num_keys - 1] < insert_key){
+        while(remote_bt_node->next_node_offset != UINT64_MAX){
+            remote_offset = remote_bt_node->next_node_offset;
+            rdma_bt_node* next_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id);
+            if(next_node->keys[0] < insert_key){
+                range_node_insert_offset = remote_offset;  
+                mem_allocator.free(remote_bt_node,0);
+                remote_bt_node = next_node;
+            }
+            else break;
+        }
+        
+    }
+    return remote_bt_node;
+}
+
+void TxnManager::split_leaf_index_node(rdma_bt_node *&old_node,rdma_bt_node *&new_index_node,rdma_bt_node *&parent_node,double insert_key,uint64_t right_offset){
+    // printf("[txn.cpp:4867]split leaf\n");
+    uint64_t insert_idx = 0;
+    rdma_idx_key_t temp_keys[BTREE_ORDER];
+    uint64_t temp_child_odffsets[BTREE_ORDER];
+	void * temp_pointers[BTREE_ORDER];
+    int i = 0, j =0 ;
+
+    int insertion_index = 0;
+    //locate
+    while (insertion_index < BTREE_ORDER - 1 && old_node->keys[insertion_index] < insert_key) insertion_index++;
+
+    //insert
+    for(i = 0;i < old_node->num_keys;i++){
+        if(old_node->keys[i] < insert_key){
+                insert_idx = i;
+                temp_keys[i] = old_node->keys[i];
+                temp_child_odffsets[i] = old_node->child_offsets[i];
+                temp_pointers[i] = old_node->pointers[i];
+        } 
+        else{break;}
+    }
+    temp_keys[i] = insert_key;
+    temp_child_odffsets[i] = 0;
+    temp_pointers[i] = NULL;
+    j = i+1;
+    while(i < old_node->num_keys){
+        temp_keys[j] = old_node->keys[i];
+        temp_child_odffsets[j] = old_node->child_offsets[i];
+        temp_pointers[j] = old_node->pointers[i];
+        i++;j++;
+    } 
+    // for(int k=0;k<old_node->num_keys;k++){
+    //     printf("[txn.cpp:4770]index_node_to_insert[%d] = %lf\n",old_node->keys[k],k);
+    // }
+    // for(int k=0;k<old_node->num_keys+1;k++){
+    //     printf("[txn.cpp:4782]temp_keys[%ld] = %lf\n",k,temp_keys[k]);
+    // }
+    int split_num;
+    //  = (BTREE_ORDER + 1)/2;
+    if ((BTREE_ORDER-1) % 2 == 0)split_num = (BTREE_ORDER-1)/2;
+    else split_num = (BTREE_ORDER-1)/2 + 1;
+
+    // printf("[txn.cpp:4781]i=%d,j=%d\n",i,j);
+    // 0 1 2 3 | 4 5 6 7 8
+    //0 1 2 3 4 5 6 7 8 num=4
+    //4 5 6 7 8 num=5
+    i=0;j = 0;
+    //split to new node
+    new_index_node->num_keys=0;
+    for(i = split_num,j=0;i< old_node->num_keys+1;i++,j++){
+        new_index_node->child_offsets[j] = temp_child_odffsets[i];
+        new_index_node->keys[j] = temp_keys[i];
+        // printf("[txn.cpp:4794]txn%d right key[%d] = %lf\n",txn->txn_id,j,new_index_node->keys[j]);
+        new_index_node->pointers[j] = temp_pointers[i];
+        new_index_node->num_keys ++;
+    }
+    new_index_node->next_node_offset = old_node->next_node_offset;
+    new_index_node->parent_offset = old_node->parent_offset;
+
+    //modify parent
+    modify_parent_node(old_node,new_index_node,parent_node,insert_key,temp_keys,right_offset); 
+
+    //modify old node
+    old_node->num_keys = 0;
+    for(i = 0;i<split_num;i++){
+        old_node->child_offsets[i] = temp_child_odffsets[i];
+        old_node->keys[i] = temp_keys[i];
+        old_node->pointers[i] = temp_pointers[i];
+        old_node->num_keys ++;
+    }
+    old_node->next_node_offset = right_offset;
+
+    // for(int k=0;k<old_node->num_keys;k++){
+    //     printf("[txn.cpp:4952]num=%ld,old_node[%d] = %lf\n",old_node->num_keys,k,old_node->keys[k]);
+    // }
+    // for(int k=0;k<new_index_node->num_keys;k++){
+    //     printf("[txn.cpp:4955]num=%ld,new_node[%d] = %lf\n",new_index_node->num_keys,k,new_index_node->keys[k]);
+    // }
+
+	for (i = old_node->num_keys; i < BTREE_ORDER - 1; i++) {
+		old_node->keys[i] = 0;
+		old_node->pointers[i] = NULL;
+		old_node->child_offsets[i] = UINT64_MAX;
+	}
+	for (i = new_index_node->num_keys; i < BTREE_ORDER - 1; i++) {
+		new_index_node->keys[i] = 0;
+		new_index_node->child_offsets[i] = UINT64_MAX;
+		new_index_node->pointers[i] = NULL;
+	}
+}
+
+void TxnManager::modify_parent_node(rdma_bt_node *&index_node_to_insert,rdma_bt_node *&new_index_node,rdma_bt_node *&parent_node,double insert_key,double *temp_keys,uint64_t right_offset){
+    // for(int j = 0;j<parent_node->num_keys;j++){
+    //     printf("[txn.cpp:4975]old_parent_node[%d] = %lf\n",j,parent_node->keys[j]);
+    // }
+    rdma_bt_node *next_parent=(rdma_bt_node*)(rdma_global_buffer + parent_node->next_node_offset);
+    // for(int j = 0;j<next_parent->num_keys;j++){
+    //     printf("[txn.cpp:4983]next_parent_node[%d] = %lf\n",j,next_parent->keys[j]);
+    // }
+    // printf("[txn.cpp:4977]parent_node->num_keys = %ld\n",parent_node->num_keys);
+    int insert_idx = 0;
+    double new_key = new_index_node->keys[0];
+    while (parent_node->keys[insert_idx] < new_key && insert_idx < parent_node->num_keys) insert_idx++;
+
+    // if (parent->num_keys < order - 1) {
+		for (int i = parent_node->num_keys-1; i >= insert_idx; i--) {
+            assert(i+2<16);
+			parent_node->keys[i + 1] = parent_node->keys[i];
+			parent_node->pointers[i+2] = parent_node->pointers[i+1];
+            parent_node->child_offsets[i+2] =  parent_node->child_offsets[i+1];
+			assert((parent_node->child_offsets[i+2] - 8) % sizeof(rdma_bt_node) == 0);
+			// printf("[txn.cpp:5060]parent_node %lu i %ld offset %ld\n",(char*)parent_node - rdma_global_buffer, (i+2), parent_node->child_offsets[i+2]);
+		}
+		parent_node->num_keys ++;
+		parent_node->keys[insert_idx] = new_key;
+		parent_node->pointers[insert_idx + 1] = (rdma_bt_node*)(rdma_global_buffer + right_offset);
+        parent_node->child_offsets[insert_idx + 1] = right_offset;
+		assert((right_offset - 8) % sizeof(rdma_bt_node) == 0);
+		// printf("[txn.cpp:5060]parent_node %lu i %ld offset %ld\n",(char*)parent_node - rdma_global_buffer, (insert_idx + 1), right_offset);
+}
+
+RC TxnManager::try_insert_new_data(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,double insert_key,INDEX *index){
+    double int_key = floor(insert_key) + g_node_cnt;
+
+    uint64_t remote_server = GET_NODE_ID((uint64_t)int_key);
+    rdma_bt_node * index_node_to_insert;
+
+    // printf("[txn.cpp:5118]insert_key = %lf\n",insert_key);
+
+    if(remote_server != g_node_id){
+        
+       
+        uint64_t range_node_insert_offset = 0;
+        index_node_to_insert = read_insert_index_node(yield,cor_id,remote_server,insert_key,range_node_insert_offset);
+
+        UInt32 num_of_key = index_node_to_insert->num_keys;
+        // assert(index_node_to_insert->keys[num_of_key - 1] >= int_key);
+        // assert(index_node_to_insert->keys[num_of_key-1] >= insert_key);
+
+        //split
+        if(index_node_to_insert->num_keys >= BTREE_ORDER - 2){//if leaf node need split
+            //lock parent
+            uint64_t try_lock = -1;
+            try_lock = cas_remote_content(remote_server,index_node_to_insert->parent_offset,0,1);
+            if(try_lock!=0)return Abort;
+            // while(try_lock != 0 && !simulation->is_done()){
+            //     try_lock = cas_remote_content(remote_server,index_node_to_insert->parent_offset,0,1);
+            // }
+
+            //check parent node
+            rdma_bt_node *parent_node = read_remote_bt_node(yield,remote_server,index_node_to_insert->parent_offset,cor_id);
+            if(parent_node->num_keys >= BTREE_ORDER - 2){
+                // abort
+                try_lock=0;
+                while(try_lock!=1&&!simulation->is_done()){
+                    // printf("[txn.cpp:5131]\n");
+                    try_lock = cas_remote_content(remote_server,index_node_to_insert->parent_offset,1,0);
+                }
+                return Abort;
+            }
+            else if(parent_node->num_keys < BTREE_ORDER - 2){
+                try_lock=0;
+                while(try_lock!=1&&!simulation->is_done()){
+                    // printf("[txn.cpp:5139]\n");
+                    try_lock = cas_remote_content(remote_server,index_node_to_insert->parent_offset,1,0);
+                }
+                return Abort;
+                //lock node to insert
+                try_lock = -1;
+                while(try_lock != 0 && !simulation->is_done()){
+                    // printf("[5140]\n");
+                    try_lock = cas_remote_content(remote_server,range_node_insert_offset,0,1);
+                }
+
+                uint64_t new_index_node_idx = faa_remote_content(yield,remote_server,rdma_index_size - sizeof(uint64_t),cor_id);
+                
+                int i = index_node_to_insert->num_keys - 1;
+                int j = BTREE_ORDER/2 - 1;
+                rdma_bt_node * new_index_node = (rdma_bt_node *)malloc(sizeof(rdma_bt_node));
+                new_index_node->intent_lock = 0;
+                new_index_node->num_keys = 0;
+                new_index_node->is_leaf = true;
+	            new_index_node->parent_offset = index_node_to_insert->parent_offset;
+                new_index_node->next_node_offset = index_node_to_insert->next_node_offset;               
+
+                //write new leaf node
+                uint64_t remote_index_node_cnt = faa_remote_content(yield,remote_server,rdma_buffer_size - sizeof(uint64_t),cor_id);
+                uint64_t new_offset = sizeof(root_offset_struct) + sizeof(rdma_bt_node)*remote_index_node_cnt;
+
+                 //modify index node
+                split_leaf_index_node(index_node_to_insert,new_index_node,parent_node,insert_key,new_offset);
+
+                write_remote_index(remote_server,sizeof(rdma_bt_node),new_offset,(char*)new_index_node);
+
+                //modify parent node
+                write_remote_index(remote_server,sizeof(rdma_bt_node)-sizeof(uint64_t),index_node_to_insert->parent_offset+sizeof(uint64_t),(char*)(parent_node+sizeof(uint64_t)));
+
+                //modify splited leaf node
+                write_remote_index(remote_server,sizeof(rdma_bt_node)-sizeof(uint64_t),range_node_insert_offset+sizeof(uint64_t),(char*)(index_node_to_insert+sizeof(uint64_t)));
+
+                //unlock
+                try_lock = 0;
+                while(try_lock!=1 && !simulation->is_done()){
+                    cas_remote_content(remote_server,range_node_insert_offset,1,0);
+                }
+                try_lock = 0;
+                while(try_lock!=1 && !simulation->is_done()){
+                   cas_remote_content(remote_server,index_node_to_insert->parent_offset,1,0);
+                }
+                return RCOK;
+            }    
+        }//endif leaf node need split
+        else if(index_node_to_insert->num_keys < BTREE_ORDER - 2){//dont need to split
+            if(x_lock_content(index_node_to_insert->intent_lock))return Abort;
+
+            //acquire X lock on range
+            // rdma_bt_node * origin_bt_node = read_remote_bt_node(yield,remote_server,range_node_insert_offset,cor_id);
+            // assert(origin_bt_node->keys[0] == index_node_to_insert->keys[0]);
+            // mem_allocator.free(origin_bt_node,0);
+
+            uint64_t add_value = 1;//0x0001
+            uint64_t before_faa = -1;
+            before_faa = cas_remote_content(yield,remote_server,range_node_insert_offset,0,1,cor_id);
+            if(before_faa!=0)return Abort;
+
+            //record
+            txn->range_node_set[txn->locked_range_num] = range_node_insert_offset;
+            txn->server_set[txn->locked_range_num] = remote_server;
+            txn->locked_range_num = txn->locked_range_num + 1;
+            
+            int j = 0;
+            for(j = 0;j <= num_of_key - 1;j++){
+                if(index_node_to_insert->keys[j] > insert_key)break;
+                // if(index_node_to_insert->keys[j] > last_key)break;
+            }
+            // for(int k = 0;k<index_node_to_insert->num_keys;k++){
+            //     printf("[txn.cpp:5196]old_node[%d]=%lf\n",k,index_node_to_insert->keys[k]);
+            // }
+            int k = num_of_key;
+            for(k = num_of_key ; k > j;k--){
+				assert(k < 16);
+                index_node_to_insert->keys[k] = index_node_to_insert->keys[k - 1];
+                index_node_to_insert->child_offsets[k] = index_node_to_insert->child_offsets[k-1];
+                index_node_to_insert->pointers[k] = index_node_to_insert->pointers[k-1];
+            }
+            index_node_to_insert->keys[j] = insert_key;
+            //TODO
+            uint64_t remote_row_num = faa_remote_content(yield,remote_server,rdma_buffer_size - sizeof(uint64_t),1,cor_id);
+                
+            uint64_t size = row_t::get_row_size(general_tuple_size);
+            uint64_t offset = size * remote_row_num;  
+            // row_t *ptr = (row_t*)(rdma_global_buffer + offset);
+            index_node_to_insert->child_offsets[j] = rdma_index_size + offset;
+            index_node_to_insert->pointers[j] = NULL;
+
+            index_node_to_insert->num_keys++;
+            // for(int k = 0;k<index_node_to_insert->num_keys;k++){
+            //     printf("[txn.cpp:5217]key=%lf,inserted_node[%d]=%lf\n",insert_key,k,index_node_to_insert->keys[k]);
+            // }
+            write_remote_index(yield,remote_server,sizeof(rdma_bt_node) - sizeof(uint64_t),range_node_insert_offset+sizeof(uint64_t),(char*)index_node_to_insert+sizeof(uint64_t),cor_id);//修改index
+            // write_remote_index(yield,remote_server,0,range_node_insert_offset,(char*)index_node_to_insert,cor_id);//修改index
+
+            // write_remote_row(yield,remote_server,sizeof(rdma_bt_node), rdma_index_size + offset,(char*)index_node_to_insert,cor_id);//插入row
+
+            //解锁
+            before_faa = -1;
+            while(before_faa != 1 && !simulation->is_done()){
+                before_faa = cas_remote_content(yield,remote_server,range_node_insert_offset,1,0,cor_id);
+            }
+            return RCOK; 
+        }//dont need to split
+        else{
+            assert(false);
+        }  
+        
+    }else{
+		//TODO local txn
+		uint64_t part_id = ((uint64_t)insert_key) % g_part_cnt;
+		// double int_key = floor(insert_key) + g_node_cnt;
+		double int_key = floor(insert_key);
+		index_node_to_insert = find_index_node_to_insert(index, insert_key, part_id);
+		if (index_node_to_insert == NULL) return Abort;
+
+		assert(part_id == g_node_id);
+		UInt32 num_of_key = index_node_to_insert->num_keys;
+		bool find_insert_slot = false;
+		uint64_t range_node_insert_offset = (char*)index_node_to_insert - rdma_global_buffer;
+
+		if(num_of_key == BTREE_ORDER - 2){
+			uint64_t parent_offset = index_node_to_insert->parent_offset;
+			uint64_t try_lock = -1;
+			while(try_lock != 0 && !simulation->is_done()){
+				try_lock = cas_remote_content(g_node_id,parent_offset,0,1);
+			}
+
+			//check parent node
+			rdma_bt_node *parent_node = (rdma_bt_node*)(rdma_global_buffer+index_node_to_insert->parent_offset);
+			// printf("[txn.cpp:5240]parent_node offset = %lu\n",index_node_to_insert->parent_offset);
+			if(parent_node->num_keys >= BTREE_ORDER - 2){
+				// abort
+                // printf("[txn.cpp:5221]parent full\n");
+				try_lock = 0;
+				while((try_lock != 1)&&(!simulation->is_done())){
+					try_lock = cas_remote_content(g_node_id,parent_offset,1,0);
+				}
+				INC_STATS(0, insert_abort1, 1);
+				return Abort;
+			}
+			else if(parent_node->num_keys < BTREE_ORDER - 2){
+				try_lock = -1;
+				while(try_lock != 0 &&  !simulation->is_done()){
+					try_lock = cas_remote_content(g_node_id,range_node_insert_offset,0,1);
+				}
+
+				int i = index_node_to_insert->num_keys - 1;
+				int j;
+				if ((BTREE_ORDER-1) % 2 == 0)j = (BTREE_ORDER-1)/2;
+				else j = (BTREE_ORDER-1)/2 + 1;
+
+				uint64_t new_index_node_cnt = faa_remote_content(yield,g_node_id,rdma_index_size - sizeof(uint64_t),1,cor_id);
+				uint64_t new_offset = sizeof(root_offset_struct) + sizeof(rdma_bt_node)*new_index_node_cnt;
+				rdma_bt_node * new_index_node;
+				new_index_node = (rdma_bt_node *)(rdma_global_buffer + new_offset);
+
+				new_index_node->intent_lock = 0;
+				new_index_node->num_keys = 0;
+				new_index_node->is_leaf = true;
+				new_index_node->parent_offset = index_node_to_insert->parent_offset;
+				new_index_node->next_node_offset = index_node_to_insert->next_node_offset;
+
+				rdma_bt_node * old_index_node = (rdma_bt_node *)malloc(sizeof(rdma_bt_node));
+				rdma_bt_node * old_parent_node = (rdma_bt_node *)malloc(sizeof(rdma_bt_node));
+				rdma_bt_node * new_node = (rdma_bt_node *)malloc(sizeof(rdma_bt_node));
+				
+				new_node->init_new_leaf();
+
+				memcpy(old_index_node,index_node_to_insert,sizeof(rdma_bt_node));
+				memcpy(old_parent_node,parent_node,sizeof(rdma_bt_node));
+
+				// for(int i = 0;i<index_node_to_insert->num_keys;i++){
+				// 	for(int k=0;k<index_node_to_insert->num_keys;k++){
+				// 		printf("[txn.cpp:5345]node offset %ld before old_node[%d] = %lf\n",range_node_insert_offset, k,index_node_to_insert->keys[k]);
+				// 	}
+				// 	for(int k=0;k<new_index_node->num_keys+1;k++){
+				// 		printf("[txn.cpp:5348]node offset %ld before new_node[%d] = %lf\n", new_offset, k,new_index_node->keys[k]);
+				// 	}
+				// } 
+		
+				split_leaf_index_node(old_index_node,new_node,old_parent_node,insert_key,new_offset);
+				
+				// write new node
+				memcpy((char*)new_index_node+sizeof(uint64_t),(char*)new_node+sizeof(uint64_t),sizeof(rdma_bt_node)-sizeof(uint64_t));
+
+				// modify parent
+				memcpy((char*)parent_node+sizeof(uint64_t),(char*)old_parent_node+sizeof(uint64_t),sizeof(rdma_bt_node)-sizeof(uint64_t));
+
+				// modify old node
+				memcpy((char*)index_node_to_insert+sizeof(uint64_t),(char*)old_index_node+sizeof(uint64_t),sizeof(rdma_bt_node)-sizeof(uint64_t));       
+
+				// // for(int i = 0;i<index_node_to_insert->num_keys;i++){
+				// // 	for(int k=0;k<index_node_to_insert->num_keys;k++){
+				// // 		printf("[txn.cpp:5419]left node offset %ld after old_node[%d] = %lf\n",range_node_insert_offset, k,index_node_to_insert->keys[k]);
+				// // 	}
+				// // 	for(int k=0;k<new_index_node->num_keys;k++){
+				// // 		printf("[txn.cpp:5422]right node offset %ld after new_node[%d] = %lf\n", new_offset, k,new_index_node->keys[k]);
+				// // 	}
+				// // 	for(int k=0;k<new_index_node->num_keys;k++){
+				// // 		printf("[txn.cpp:5374]parent node offset %ld after new_node[%d] = %lf, %lu\n", index_node_to_insert->parent_offset, k,parent_node->keys[k],parent_node->child_offsets[k]);
+				// // 	}
+				// // } 
+
+                //     //unlock
+				try_lock = 0;
+				while(try_lock!=1 && !simulation->is_done()){
+					// uint64_t ix,x,is,s;
+					// ix = decode_ix_lock(try_lock);
+					// x = decode_x_lock(try_lock);
+					// is = decode_is_lock(try_lock);
+					// s = decode_s_lock(try_lock);
+					try_lock=cas_remote_content(g_node_id,range_node_insert_offset,1,0);
+				}
+
+				try_lock=0;
+				while(try_lock != 1 && !simulation->is_done()){
+					try_lock = cas_remote_content(g_node_id,parent_offset,1,0);
+				}
+				
+				mem_allocator.free(new_node,0);
+				mem_allocator.free(old_parent_node,0);
+				mem_allocator.free(old_index_node,0);
+				
+				return RCOK;
+			}
+			
+		}else if(num_of_key < BTREE_ORDER - 2){
+			uint64_t ix,x,is,s;
+			uint64_t local_offset = (char*)index_node_to_insert - rdma_global_buffer;
+
+			//range lock(X)
+			uint64_t before_cas = -1;
+			before_cas = cas_remote_content(yield,remote_server,local_offset,0,1,cor_id);
+			if(before_cas != 0){
+				// printf("[txn.cpp:5246]fail lock\n");
+				return Abort;
+			}
+
+			num_of_key = index_node_to_insert->num_keys; 
+			if(num_of_key == BTREE_ORDER - 2){
+				before_cas = 0;
+				while(before_cas != 1 && !simulation->is_done()){
+					cas_remote_content(yield,remote_server,local_offset,1,0,cor_id);
+				}
+				printf("[txn.cpp:5254]no space\n");
+				return Abort;
+			}
+			ix = decode_ix_lock(before_cas);
+			x = decode_x_lock(before_cas);
+			is = decode_is_lock(before_cas);
+			s = decode_s_lock(before_cas);
+			// printf("[txn.cpp:5249]txn%ld get lock,offset=%ld,ix%ld,x%ld,is%ld,s%ld\n",get_txn_id(),local_offset,ix,x,is,s);
+
+			int j = 0;
+			for(j = 0;j <= num_of_key - 1;j++){
+				if(index_node_to_insert->keys[j] > insert_key)break;
+			}
+			rdma_bt_node *old_node = (rdma_bt_node*)malloc(sizeof(rdma_bt_node));
+			memcpy((char*)old_node,(char*)index_node_to_insert,sizeof(rdma_bt_node));
+			assert(old_node->num_keys == index_node_to_insert->num_keys);
+
+//写新记录
+			uint64_t local_row_num = faa_remote_content(yield,remote_server,rdma_buffer_size - sizeof(uint64_t),1,cor_id);
+				
+			uint64_t size = row_t::get_row_size(general_tuple_size);
+			uint64_t row_offset = size * local_row_num;  
+			row_t *ptr = (row_t*)(rdma_global_buffer + rdma_index_size + row_offset);
+
+//修改index 
+			assert(insert_key != 0);
+			int k = num_of_key;
+			old_node->num_keys++;
+			for(k = num_of_key ; k > j;k--){
+				assert(k < 16);
+				old_node->keys[k] = old_node->keys[k - 1];
+				old_node->child_offsets[k] = old_node->child_offsets[k-1];
+				old_node->pointers[k] = old_node->pointers[k-1];
+			}
+			old_node->keys[j] = insert_key;                
+			old_node->child_offsets[j] = rdma_index_size + row_offset;
+			old_node->pointers[j] = NULL;
+
+			// for(int i = 0;i < index_node_to_insert->num_keys;i++){
+			//         printf("[txn.cpp:5521]insert%lf,old_node[%d]=%lf\n",insert_key,i,index_node_to_insert->keys[i]);
+			// }
+			// for(int i = 0;i < old_node->num_keys;i++){
+			//         printf("[txn.cpp:5524]insert%lf,inserted_node[%d]=%lf\n",insert_key,i,old_node->keys[i]);
+			// }
+	
+			memcpy((char*)(index_node_to_insert)+sizeof(uint64_t),
+					(char*)(old_node)+sizeof(uint64_t),
+					sizeof(rdma_bt_node)-sizeof(uint64_t));
+
+
+			// write_remote_row(yield,remote_server,sizeof(rdma_bt_node),left_range_node_offset,(char*)index_node_to_insert,cor_id);//插入row
+			ix = decode_ix_lock(index_node_to_insert->intent_lock);
+			x = decode_x_lock(index_node_to_insert->intent_lock);
+			is = decode_is_lock(index_node_to_insert->intent_lock);
+			s = decode_s_lock(index_node_to_insert->intent_lock);
+
+			// printf("[txn.cpp:5284]txn%ld release lock,offset=%ld,ix%ld,x%ld,is%ld,s%ld\n",get_txn_id(),local_offset,ix,x,is,s);
+			//解锁
+			before_cas = -1;
+			while(before_cas!=1 && !simulation->is_done()){
+				before_cas = cas_remote_content(yield,remote_server,local_offset,1,0,cor_id);
+			}
+			ix = decode_ix_lock(before_cas);
+			x = decode_x_lock(before_cas);
+			is = decode_is_lock(before_cas);
+			s = decode_s_lock(before_cas);
+
+			// printf("[txn.cpp:5293]txn%ld release lock,offset=%ld,ix%ld,x%ld,is%ld,s%ld\n",get_txn_id(),local_offset,ix,x,is,s);
+			mem_allocator.free(old_node,0);
+			return RCOK; 
+		}//no split
+		else{
+			assert(false);
+			return Abort;
+		}
+	}
+}
+
+#if INDEX_STRUCT == IDX_LEARNED
 LeafIndexInfo * TxnManager::read_left_leaf_index_node(yield_func_t &yield,uint64_t cor_id,uint64_t target_server,uint64_t left_key,uint64_t &left_range_node_offset){
     auto position = pgm_index[target_server]->search(left_key);
     int subscript = position.pos;
@@ -4783,6 +5479,7 @@ LeafIndexInfo * TxnManager::read_left_leaf_index_node(yield_func_t &yield,uint64
     
     return remote_learn_node;
 }
+#endif
 
 void TxnManager::read_continuous_index(yield_func_t &yield,int target_server, int batch_num,uint64_t *batch_key_vector, itemid_t **batch_index_vector, uint64_t cor_id){
 	int count = 0;
@@ -5124,20 +5821,9 @@ itemid_t * TxnManager::read_remote_btree_index(yield_func_t &yield, uint64_t tar
     remote_offset = cas_remote_content(target_server,0,0,1);
     remote_operate_num++;
     assert(remote_offset != 0);
+    // printf("[txn.cpp:5831]txn%ld read offset%ld\n",get_txn_id(),remote_offset);
     remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id); 
     remote_operate_num++;
-    // printf("[txn.cpp:4568]my_root_offset = %ld,remote_root_offset = %ld,remote_root_num_keys = %ld\n",my_root_offset,remote_offset,remote_bt_node->num_keys); 
-    // for(int i = 0;i < remote_bt_node->num_keys;i++){
-    //     printf("%ld ",remote_bt_node->keys[i]);
-    // }
-    // printf("\n");
-
-    // rdma_bt_node *test_root = (rdma_bt_node *)(rdma_global_buffer + my_root_offset);
-    // printf("[txn.cpp:4575]my_root_num_keys = %ld\n",test_root->num_keys); 
-    // for(int i = 0;i < test_root->num_keys;i++){
-    //     printf("%ld ",test_root->keys[i]);
-    // }
-    // printf("\n");
     
     while(remote_bt_node->is_leaf == false){
         int i = 0;
@@ -5148,8 +5834,17 @@ itemid_t * TxnManager::read_remote_btree_index(yield_func_t &yield, uint64_t tar
         }
         remote_offset = remote_bt_node->child_offsets[i];
         mem_allocator.free(remote_bt_node,0);
+    // printf("[txn.cpp:5844]txn%ld read offset%ld\n",get_txn_id(),remote_offset);
         remote_bt_node = read_remote_bt_node(yield,target_server,remote_offset,cor_id);
         remote_operate_num++;
+    }
+
+    while(remote_bt_node->keys[remote_bt_node->num_keys-1]<key){
+        mem_allocator.free(remote_bt_node,0);
+        if(remote_bt_node->next_node_offset!=UINT64_MAX){
+    // printf("[txn.cpp:5852]txn%ld read offset%ld\n",get_txn_id(),remote_bt_node->next_node_offset);
+            remote_bt_node = read_remote_bt_node(yield,target_server,remote_bt_node->next_node_offset,cor_id);
+        }  
     }
     
     itemid_t* item = (itemid_t *)mem_allocator.alloc(sizeof(itemid_t));
@@ -5165,6 +5860,7 @@ itemid_t * TxnManager::read_remote_btree_index(yield_func_t &yield, uint64_t tar
         }
     }
     assert(item != NULL);
+    assert((item->leaf_node_offset!=0)&&((item->leaf_node_offset-8)%504==0));
     return item;
 
  }
@@ -6012,10 +6708,11 @@ RC TxnManager::preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_ro
 	access->offset = m_item->offset;
 #endif
 
-#if CC_ALG == RDMA_OPT_NO_WAIT3
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK ||  CC_ALG == RDMA_MIX_RANGE_LOCK
   	access->orig_row = test_row;
 	access->location = loc;
 	access->offset = m_item->offset;
+    access->leaf_offset = m_item->leaf_node_offset;
 	// access->lock_type = lock_type;
 #endif
 
@@ -6054,6 +6751,43 @@ RC TxnManager::preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_ro
 	txn->accesses.add(access);
 	
     return rc;
+}
+
+RC TxnManager::preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_row,access_t type,double decimal_key,uint64_t loc,uint64_t* wid){
+#if DYNAMIC_WORKLOAD
+    Access * access = NULL;
+	access_pool.get(get_thd_id(),access);
+
+	this->last_row = test_row;
+    this->last_type = type;
+
+    RC rc = RCOK;
+	rc = test_row->remote_copy_row(test_row, this, access);
+    assert(test_row->get_decimal_key() == access->data->get_decimal_key());
+    if (rc == Abort || rc == WAIT) {
+        DEBUG_M("TxnManager::get_row(abort) access free\n");
+        access_pool.put(get_thd_id(),access);
+        return rc;
+    }
+
+    access->type = type;
+#if CC_ALG == RDMA_OPT_NO_WAIT3 || CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK || CC_ALG == RDMA_MIX_RANGE_LOCK
+  	access->orig_row = test_row;
+	access->location = loc;
+	access->offset = m_item->offset;
+    access->leaf_offset = m_item->leaf_node_offset;
+#endif
+
+    row_local = access->data;
+    ++txn->row_cnt;
+
+    mem_allocator.free(m_item,0);
+
+    if (type == WR) ++txn->write_cnt;
+	txn->accesses.add(access);
+	
+    return rc;
+#endif
 }
 
 RC TxnManager::preserve_access(row_t *&row_local,itemid_t* m_item,row_t *test_row,access_t type,uint64_t key,uint64_t loc, lock_t lock_type){

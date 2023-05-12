@@ -318,6 +318,12 @@ void AccessPool::get(uint64_t thd_id, Access *& item) {
   item->offset = 0;
 #endif
 
+#if CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+    item->location = g_node_id;
+    item->offset = 0;
+    item->leaf_offset = 0;
+#endif
+
 #if CC_ALG == RDMA_OPT_NO_WAIT3
     item->location = g_node_id;
     item->offset = 0;

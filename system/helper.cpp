@@ -37,6 +37,7 @@ void itemid_t::init() {
 	valid = false;
 	location = 0;
 	next = NULL;
+    leaf_node_offset = 0;
 }
 
 int get_thdid_from_txnid(uint64_t txnid) { return txnid % g_thread_cnt; }

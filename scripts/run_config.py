@@ -30,7 +30,7 @@ vcloud_uname = 'home/ywq'
 #identity = "/usr0/data1/dvanaken/.ssh/id_rsa_vcloud"
 vcloud_machines = [
 "10.77.110.146",
-"10.77.110.147",
+# "10.77.110.147",
 "10.77.110.148",
 "10.77.110.148",
 "10.77.110.146",

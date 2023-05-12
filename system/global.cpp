@@ -67,6 +67,8 @@
 #include "rdma_calvin.h"
 #include "rdma_null.h"
 #include "rdma_dslr_no_wait.h"
+#include "rdma_range_lock.h"
+
 #include "rdma_bamboo.h"
 #include "key_xid.h"
 #include "rts_cache.h"
@@ -148,6 +150,9 @@ RDMA_calvin calvin_man;
 #endif
 #if CC_ALG == RDMA_CNULL
 RDMA_Null rcnull_man;
+#endif
+#if CC_ALG == RDMA_DOUBLE_RANGE_LOCK || CC_ALG == RDMA_SINGLE_RANGE_LOCK
+RDMA_range_lock rangelock_man;
 #endif
 Workload * m_wl;
 TxnManPool txn_man_pool;
@@ -296,7 +301,7 @@ UInt64 tuple_count = 0;
 UInt64 max_tuple_size = 0;
 pthread_mutex_t * RDMA_MEMORY_LATCH;
 
-UInt64 rdma_buffer_size = 15*(1024*1024*1024L);
+UInt64 rdma_buffer_size = 20*(1024*1024*1024L);
 UInt64 client_rdma_buffer_size = 800*(1024*1024L);
 UInt64 rdma_index_size = (1024*1024*1024L);
 UInt64 rdma_pgm_index_para_size = (50*1024*1024L);
@@ -445,3 +450,9 @@ uint64_t btree_layer = 1;
 pgm::PGMIndex<uint64_t,64> **pgm_index;
 pgm::PGMIndex<uint64_t,64> *local_pgm_index;
 int range_size = BTREE_ORDER;
+uint64_t *last_row_order = 0;
+uint64_t *last_index_node_order = 0;
+int max_local_key = 0;
+// uint64_t local_row_num = 0;
+uint64_t general_tuple_size = 0;
+row_t *total_row = NULL;
